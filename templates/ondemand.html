@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="ondemand-page">
+    <header class="topbar">
+        <div class="topbar-row">
+            <div class="topbar-brand">
+                <div class="topbar-title">CHUPPY RAG CONVERTER</div>
+                <div class="topbar-subtitle">ON DEMAND</div>
+            </div>
+            <div class="topbar-actions">
+                <div class="model-pill">{{ model_label }}</div>
+            </div>
+        </div>
+    </header>
+
+    <main class="ondemandGrid">
+        <section class="card ondemandSidebarCard">
+            <div class="ondemandSectionHead">
+                <h2>フォルダツリー</h2>
+            </div>
+            <div id="folderTree" class="folderTreeMini"></div>
+        </section>
+
+        <section class="card ondemandMainCard">
+            <div class="ondemandTopBar">
+                <div class="ondemandCurrentWrap">
+                    <div class="miniTitle">現在のフォルダ</div>
+                    <div id="currentPath" class="ondemandCurrentPath">-</div>
+                    <div id="currentMeta" class="ondemandCurrentMeta">Lv5フォルダを選択してください</div>
+
+                    <div class="ondemandKnowledgeBlock">
+                        <div class="miniTitle">Difyナレッジ</div>
+                        <div id="knowledgeLabel" class="ondemandKnowledgeLabel">Lv5フォルダを選択してください</div>
+                    </div>
+                </div>
+
+                <div class="ondemandTopActions">
+                    <button id="refreshBtn" type="button">再読込</button>
+                </div>
+            </div>
+
+            <div id="dropZone" class="ondemandDropZone disabled">
+                <div class="ondemandDropTitle">ここにファイルをドラッグ&ドロップ</div>
+                <div id="dropZoneSub" class="ondemandDropSub">Lv5フォルダ選択時のみ追加できます</div>
+                <input id="fileInput" type="file" multiple hidden>
+                <button id="fileSelectBtn" type="button" disabled>ファイル選択</button>
+            </div>
+
+            <section class="ondemandQueueSection">
+                <div class="ondemandListHead">
+                    <div class="miniTitle">アップロード待ちキュー</div>
+                    <div id="queueSummary" class="ondemandListState">-</div>
+                </div>
+                <div id="queueHint" class="ondemandQueueHint">フォルダ横断でフェアに1件ずつ処理します。</div>
+
+                <div id="queueEmpty" class="ondemandEmptyBox">
+                    現在、キューはありません。
+                </div>
+
+                <div id="queueTableWrap" class="ondemandTableWrap hidden">
+                    <table class="ondemandTable ondemandQueueTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 92px;">順番</th>
+                                <th style="width: 96px;">状態</th>
+                                <th style="width: 20%;">フォルダ</th>
+                                <th style="width: 16%;">ファイル</th>
+                                <th style="width: 18%;">ナレッジ</th>
+                                <th>進捗</th>
+                                <th style="width: 150px;">更新</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="ondemandListSection">
+                <div class="ondemandListHead">
+                    <div class="miniTitle">内容一覧</div>
+                    <div id="listState" class="ondemandListState">未選択</div>
+                </div>
+
+                <div id="listEmpty" class="ondemandEmptyBox">
+                    Lv5のフォルダが選択されるまで、内容一覧は表示されません。
+                </div>
+
+                <div id="listTableWrap" class="ondemandTableWrap hidden">
+                    <table class="ondemandTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 64px;">種別</th>
+                                <th>名前</th>
+                                <th style="width: 150px;">更新日時</th>
+                                <th style="width: 92px;">サイズ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fileTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <script id="ondemand-config" type="application/json">
+        {{ {
+            "rootPath": explorer_root,
+            "maxDepth": explorer_max_depth,
+            "uploadAllowedDepth": upload_allowed_depth
+        } | tojson }}
+    </script>
+    <script src="{{ url_for('static', filename='ondemand.js') }}"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@
             rootPath: "",
             maxDepth: 5,
             uploadAllowedDepth: 5,
+            allowedExtensions: [],
         };
 
         const el = document.getElementById("ondemand-config");
@@ -15,7 +16,7 @@
                 ...(JSON.parse(el.textContent || "{}") || {}),
             };
         } catch (err) {
-            console.error("ONDemandConfig parse error:", err);
+            console.error("OnDemand config parse error:", err);
             return defaults;
         }
     }
@@ -23,6 +24,13 @@
     const cfg = loadOnDemandConfig();
     const MAX_DEPTH = Number(cfg.maxDepth || 5);
     const UPLOAD_ALLOWED_DEPTH = Number(cfg.uploadAllowedDepth || 5);
+    const ALLOWED_EXTENSIONS = Array.from(new Set((Array.isArray(cfg.allowedExtensions) ? cfg.allowedExtensions : [])
+        .map((ext) => String(ext || "").trim().toLowerCase())
+        .filter(Boolean)))
+        .sort();
+    const ALLOWED_EXTENSION_SET = new Set(ALLOWED_EXTENSIONS);
+    const TREE_COLLAPSED_MARK = ">";
+    const TREE_EXPANDED_MARK = "∨";
 
     const folderTree = document.getElementById("folderTree");
     const currentPath = document.getElementById("currentPath");
@@ -31,9 +39,16 @@
 
     const dropZone = document.getElementById("dropZone");
     const dropZoneSub = document.getElementById("dropZoneSub");
+    const dropZoneExts = document.getElementById("dropZoneExts");
     const fileInput = document.getElementById("fileInput");
     const fileSelectBtn = document.getElementById("fileSelectBtn");
     const refreshBtn = document.getElementById("refreshBtn");
+
+    const tabListBtn = document.getElementById("tabListBtn");
+    const tabQueueBtn = document.getElementById("tabQueueBtn");
+    const queueTabCount = document.getElementById("queueTabCount");
+    const listPanel = document.getElementById("listPanel");
+    const queuePanel = document.getElementById("queuePanel");
 
     const listEmpty = document.getElementById("listEmpty");
     const listTableWrap = document.getElementById("listTableWrap");
@@ -49,7 +64,13 @@
     let selectedPath = "";
     let selectedDepth = 0;
     let selectedCanUpload = false;
+    let selectedDeleteAvailable = false;
+    let selectedDeleteReason = "";
     let queuePollTimer = null;
+    let currentPanel = "list";
+    let currentListDirs = [];
+    let currentListFiles = [];
+    const deleteBusyPaths = new Set();
 
     const datasetState = {
         loaded: false,
@@ -68,7 +89,7 @@
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
+            .replace(/\"/g, "&quot;")
             .replace(/'/g, "&#39;");
     }
 
@@ -91,14 +112,21 @@
         queueHint.className = `ondemandQueueHint${kind ? ` ${kind}` : ""}`;
     }
 
+    function splitRelPath(relPath) {
+        return String(relPath || "")
+            .replace(/\\/g, "/")
+            .replace(/^\/+|\/+$/g, "")
+            .split("/")
+            .filter(Boolean);
+    }
+
     function formatRelativePath(relPath) {
-        const rel = String(relPath || "").replace(/^\/+|\/+$/g, "");
+        const rel = splitRelPath(relPath).join("/");
         return rel || ".";
     }
 
     function buildKnowledgeNameFromPath(relPath) {
-        const norm = String(relPath || "").replace(/^\/+|\/+$/g, "");
-        const parts = norm ? norm.split("/").filter(Boolean) : [];
+        const parts = splitRelPath(relPath);
         if (parts.length !== UPLOAD_ALLOWED_DEPTH) return "";
         const filtered = parts.filter((part) => part !== "元データ");
         if (!filtered.length) return "";
@@ -112,17 +140,35 @@
     }
 
     async function fetchJson(url, options = {}) {
-        const res = await fetch(url, options);
-        const data = await res.json().catch(() => ({}));
+        const res = await fetch(url, {
+            cache: "no-store",
+            ...options,
+        });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch {
+            data = {};
+        }
         if (!res.ok || data.ok === false) {
-            throw new Error(data.error || `HTTP ${res.status}`);
+            throw new Error(data.error || `${res.status} ${res.statusText}`);
         }
         return data;
     }
 
+    function formatAllowedExtensions() {
+        if (!ALLOWED_EXTENSIONS.length) return "-";
+        return ALLOWED_EXTENSIONS.join(", ");
+    }
+
+    function renderAllowedExtensions() {
+        if (!dropZoneExts) return;
+        dropZoneExts.textContent = `追加可能拡張子: ${formatAllowedExtensions()}`;
+    }
+
     async function ensureDatasetsLoaded() {
         if (datasetState.loaded) return datasetState.items;
-        const data = await fetchJson("/api/datasets", { cache: "no-store" });
+        const data = await fetchJson("/api/datasets");
         datasetState.loaded = true;
         datasetState.items = Array.isArray(data.items) ? data.items : [];
         datasetState.error = "";
@@ -131,7 +177,7 @@
 
     async function updateKnowledgeLabel(relPath, canUpload) {
         if (!canUpload) {
-            setKnowledgeLabel(`Lv${UPLOAD_ALLOWED_DEPTH}フォルダを選択してください`);
+            setKnowledgeLabel(`Lv${UPLOAD_ALLOWED_DEPTH}フォルダを選択してください`, "");
             return;
         }
 
@@ -162,14 +208,16 @@
         selectedCanUpload = !!canUpload;
         selectedDepth = Number(depth || 0);
 
+        renderAllowedExtensions();
+
         if (selectedCanUpload) {
             dropZone.classList.remove("disabled");
             fileSelectBtn.disabled = false;
-            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダです。ファイル追加できます。`;
+            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダです。対応拡張子のみ追加できます。`;
         } else {
             dropZone.classList.add("disabled");
             fileSelectBtn.disabled = true;
-            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダ選択時のみファイル追加できます（現在: Lv${selectedDepth}）`;
+            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダ選択時のみ追加できます（現在: Lv${selectedDepth}）`;
         }
     }
 
@@ -186,39 +234,109 @@
         }
     }
 
+    function getFileExtension(name) {
+        const base = String(name || "").trim().split(/[\\/]/).pop() || "";
+        const index = base.lastIndexOf(".");
+        if (index <= 0 || index === base.length - 1) return "";
+        return base.slice(index + 1).toLowerCase();
+    }
+
+    function getDottedExtension(name) {
+        const ext = getFileExtension(name);
+        return ext ? `.${ext}` : "";
+    }
+
+    function isSupportedFileName(name) {
+        const ext = getDottedExtension(name);
+        return !!ext && ALLOWED_EXTENSION_SET.has(ext);
+    }
+
+    function getFileIcon(name, isDir = false) {
+        if (isDir) return "📁";
+        const ext = getFileExtension(name);
+        if (["pdf"].includes(ext)) return "📕";
+        if (["doc", "docx", "rtf"].includes(ext)) return "📘";
+        if (["xls", "xlsx", "xlsm", "xlsb", "csv", "tsv"].includes(ext)) return "📗";
+        if (["ppt", "pptx", "key"].includes(ext)) return "📙";
+        if (["png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "tif", "tiff"].includes(ext)) return "🖼️";
+        if (["zip", "rar", "7z", "gz", "tar"].includes(ext)) return "🗜️";
+        if (["md", "txt", "log"].includes(ext)) return "📝";
+        if (["json", "xml", "yaml", "yml", "ini", "conf"].includes(ext)) return "🧩";
+        if (["py", "js", "ts", "css", "html", "java", "c", "cpp", "cs", "sql", "sh"].includes(ext)) return "💻";
+        return "📄";
+    }
+
+    function renderNameCell(name, isDir = false) {
+        const safeName = escapeHtml(name || "-");
+        const icon = escapeHtml(getFileIcon(name, isDir));
+        return `
+            <div class="fileNameCell">
+                <span class="fileTypeIcon" aria-hidden="true">${icon}</span>
+                <span class="fileNameText">${safeName}</span>
+            </div>
+        `;
+    }
+
     function renderTable(dirs, files) {
+        currentListDirs = Array.isArray(dirs) ? dirs.slice() : [];
+        currentListFiles = Array.isArray(files) ? files.slice() : [];
         fileTableBody.innerHTML = "";
-        const hasDirs = Array.isArray(dirs) && dirs.length > 0;
-        const hasFiles = Array.isArray(files) && files.length > 0;
+
+        const visibleDirs = currentListDirs;
+        const visibleFiles = currentListFiles.filter((item) => isSupportedFileName(item?.name || ""));
+        const hasDirs = visibleDirs.length > 0;
+        const hasFiles = visibleFiles.length > 0;
+        const totalCount = visibleDirs.length + visibleFiles.length;
+        listState.textContent = totalCount > 0 ? `${totalCount}件` : "0件";
 
         if (!hasDirs && !hasFiles) {
             const tr = document.createElement("tr");
-            tr.innerHTML = `<td colspan="4" class="empty-cell">ファイルはありません。</td>`;
+            tr.innerHTML = `<td colspan="4" class="empty-cell">対応ファイルはありません。</td>`;
             fileTableBody.appendChild(tr);
             return;
         }
 
-        for (const d of dirs || []) {
+        for (const d of visibleDirs) {
             const tr = document.createElement("tr");
             tr.className = "clickable-row";
             tr.innerHTML = `
-                <td>📁</td>
-                <td>${escapeHtml(d.name)}</td>
+                <td>${renderNameCell(d.name, true)}</td>
                 <td>${escapeHtml(d.mtime || "-")}</td>
+                <td>-</td>
                 <td>-</td>
             `;
             tr.addEventListener("click", () => loadFolder(d.path || ""));
             fileTableBody.appendChild(tr);
         }
 
-        for (const f of files || []) {
+        for (const f of visibleFiles) {
+            const filePath = String(f?.path || "");
+            const isBusy = deleteBusyPaths.has(filePath);
+            const disabled = isBusy || !selectedDeleteAvailable;
+            const disabledReason = isBusy ? "削除中です。" : (selectedDeleteReason || "Difyに通信できないため削除できません。")
+            const title = disabled ? disabledReason : "元ファイル・Markdown・Difyドキュメントを削除します。";
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td>📄</td>
-                <td>${escapeHtml(f.name)}</td>
+                <td>${renderNameCell(f.name, false)}</td>
                 <td>${escapeHtml(f.mtime || "-")}</td>
                 <td>${escapeHtml(formatBytes(f.size_bytes))}</td>
+                <td>
+                    <button
+                        type="button"
+                        class="fileDeleteBtn"
+                        data-path="${escapeHtml(filePath)}"
+                        title="${escapeHtml(title)}"
+                        ${disabled ? "disabled" : ""}
+                    >削除</button>
+                </td>
             `;
+            const btn = tr.querySelector('.fileDeleteBtn');
+            if (btn) {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await deleteFile(f);
+                });
+            }
             fileTableBody.appendChild(tr);
         }
     }
@@ -242,11 +360,7 @@
         const siblings = parentChildren.querySelectorAll(":scope > .folderTreeItem.expanded");
         siblings.forEach((sib) => {
             if (sib === currentWrapper) return;
-            sib.classList.remove("expanded");
-            const toggle = sib.querySelector(":scope > .folderTreeRow > .folderTreeToggle");
-            const children = sib.querySelector(":scope > .folderTreeChildren");
-            if (toggle && !toggle.disabled) toggle.textContent = "+";
-            if (children) children.hidden = true;
+            setTreeToggleState(sib, false);
         });
     }
 
@@ -256,12 +370,106 @@
             if (item === currentWrapper) return;
             if (item.contains(currentWrapper)) return;
             if (currentWrapper.contains(item)) return;
-            item.classList.remove("expanded");
-            const toggle = item.querySelector(":scope > .folderTreeRow > .folderTreeToggle");
-            const children = item.querySelector(":scope > .folderTreeChildren");
-            if (toggle && !toggle.disabled) toggle.textContent = "+";
-            if (children) children.hidden = true;
+            setTreeToggleState(item, false);
         });
+    }
+
+    function renderTreeLabel(item) {
+        const name = escapeHtml(item?.name || "/");
+        const depth = Number(item?.depth || 0);
+        const count = Number(item?.file_count || 0);
+        return `
+            <span class="folderTreeMain">
+                <span class="folderTreeName">${name}</span>
+                <span class="folderTreeCount">(${escapeHtml(count)})</span>
+            </span>
+            <span class="folderTreeLv">Lv${escapeHtml(depth)}</span>
+        `;
+    }
+
+    function setTreeToggleState(wrapper, expanded) {
+        if (!wrapper) return;
+        const toggle = wrapper.querySelector(":scope > .folderTreeRow > .folderTreeToggle");
+        const nodeBtn = wrapper.querySelector(":scope > .folderTreeRow > .folderTreeNode");
+        const children = wrapper.querySelector(":scope > .folderTreeChildren");
+        const canExpand = !!(toggle && !toggle.disabled && children);
+
+        if (!canExpand) {
+            if (toggle) toggle.textContent = "";
+            if (nodeBtn) {
+                nodeBtn.setAttribute("aria-expanded", "false");
+                nodeBtn.removeAttribute("data-expanded");
+            }
+            if (children) children.hidden = true;
+            wrapper.classList.remove("expanded");
+            return;
+        }
+
+        wrapper.classList.toggle("expanded", !!expanded);
+        children.hidden = !expanded;
+        toggle.textContent = expanded ? TREE_EXPANDED_MARK : TREE_COLLAPSED_MARK;
+        if (nodeBtn) {
+            nodeBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+            nodeBtn.dataset.expanded = expanded ? "1" : "0";
+        }
+    }
+
+    async function ensureTreeChildrenLoaded(wrapper, item) {
+        const children = wrapper?.querySelector(":scope > .folderTreeChildren");
+        if (!children || children.dataset.loaded) return;
+        const childItems = await fetchTreeChildren(item);
+        children.innerHTML = "";
+        for (const child of childItems) {
+            if (Number(child?.depth || 0) <= MAX_DEPTH) {
+                children.appendChild(makeTreeNode(child));
+            }
+        }
+        children.dataset.loaded = "1";
+    }
+
+    async function setTreeExpanded(wrapper, item, expand, options = {}) {
+        const keepSiblingsOpen = !!options.keepSiblingsOpen;
+        const toggle = wrapper?.querySelector(":scope > .folderTreeRow > .folderTreeToggle");
+        if (!wrapper || !toggle || toggle.disabled) {
+            setTreeToggleState(wrapper, false);
+            return false;
+        }
+
+        if (!expand) {
+            setTreeToggleState(wrapper, false);
+            return false;
+        }
+
+        if (!keepSiblingsOpen) {
+            closeSiblingBranches(wrapper);
+            closeAllOtherBranches(wrapper);
+        }
+
+        await ensureTreeChildrenLoaded(wrapper, item);
+        setTreeToggleState(wrapper, true);
+        return true;
+    }
+
+    async function toggleTreeExpanded(wrapper, item, options = {}) {
+        const children = wrapper?.querySelector(":scope > .folderTreeChildren");
+        const isExpanded = !!(wrapper?.classList.contains("expanded") && children && !children.hidden);
+        return setTreeExpanded(wrapper, item, !isExpanded, options);
+    }
+
+    async function fetchTreeChildren(item) {
+        const path = item?.path || "";
+        const depth = Number(item?.depth || 0);
+
+        if (depth === 3) {
+            const lv3Data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(path)}`);
+            const lv4 = (lv3Data.dirs || []).find((child) => Number(child?.depth || 0) === 4 && String(child?.name || "") === "元データ");
+            if (!lv4) return [];
+            const lv4Data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(lv4.path || "")}`);
+            return (lv4Data.dirs || []).filter((child) => Number(child?.depth || 0) === UPLOAD_ALLOWED_DEPTH);
+        }
+
+        const data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(path)}`);
+        return filterDirsByRule(data.dirs || []);
     }
 
     function makeTreeNode(item) {
@@ -269,6 +477,7 @@
         wrapper.className = "folderTreeItem";
         wrapper.dataset.path = item.path || "";
         wrapper.dataset.depth = String(item.depth || 0);
+        wrapper.dataset.fileCount = String(Number(item.file_count || 0));
 
         const row = document.createElement("div");
         row.className = "folderTreeRow";
@@ -276,58 +485,43 @@
         const toggle = document.createElement("button");
         toggle.type = "button";
         toggle.className = "folderTreeToggle";
-        toggle.textContent = item.depth < MAX_DEPTH && item.has_children ? "+" : "";
-        toggle.disabled = !(item.depth < MAX_DEPTH && item.has_children);
+        toggle.textContent = Number(item.depth || 0) < MAX_DEPTH && item.has_children ? TREE_COLLAPSED_MARK : "";
+        toggle.disabled = !(Number(item.depth || 0) < MAX_DEPTH && item.has_children);
+        toggle.setAttribute("aria-label", toggle.disabled ? "" : "フォルダを開閉");
 
         const nodeBtn = document.createElement("button");
         nodeBtn.type = "button";
         nodeBtn.className = "folderTreeNode";
-        nodeBtn.innerHTML = `
-            <span class="folderTreeName">${escapeHtml(item.name || "/")}</span>
-            <span class="folderTreeLv">Lv${escapeHtml(item.depth)}</span>
-        `;
+        nodeBtn.innerHTML = renderTreeLabel(item);
+        nodeBtn.setAttribute("aria-expanded", "false");
 
         const children = document.createElement("div");
         children.className = "folderTreeChildren";
         children.hidden = true;
 
+        setTreeToggleState(wrapper, false);
+
         toggle.addEventListener("click", async (e) => {
+            e.preventDefault();
             e.stopPropagation();
             if (toggle.disabled) return;
-
-            const expanded = wrapper.classList.contains("expanded");
-            if (expanded) {
-                wrapper.classList.remove("expanded");
-                children.hidden = true;
-                toggle.textContent = "+";
-                return;
-            }
-
             try {
-                closeSiblingBranches(wrapper);
-                closeAllOtherBranches(wrapper);
-
-                if (!children.dataset.loaded) {
-                    const data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(item.path || "")}`);
-                    const filteredDirs = filterDirsByRule(data.dirs || []);
-                    children.innerHTML = "";
-                    for (const child of filteredDirs) {
-                        if (Number(child.depth) <= MAX_DEPTH) children.appendChild(makeTreeNode(child));
-                    }
-                    children.dataset.loaded = "1";
-                }
-
-                wrapper.classList.add("expanded");
-                children.hidden = false;
-                toggle.textContent = "-";
+                await toggleTreeExpanded(wrapper, item);
             } catch (err) {
                 setQueueHint(`ツリー展開失敗: ${String(err?.message || err)}`, "err");
             }
         });
 
         nodeBtn.addEventListener("click", async () => {
-            await loadFolder(item.path || "");
-            highlightSelectedTree(item.path || "");
+            try {
+                if (!toggle.disabled) {
+                    await toggleTreeExpanded(wrapper, item);
+                }
+                await loadFolder(item.path || "");
+                highlightSelectedTree(item.path || "");
+            } catch (err) {
+                setQueueHint(`フォルダ読込失敗: ${String(err?.message || err)}`, "err");
+            }
         });
 
         row.appendChild(toggle);
@@ -343,10 +537,47 @@
         if (target) target.classList.add("selected");
     }
 
+    function visibleTreePathsForFolder(relPath) {
+        const parts = splitRelPath(relPath);
+        const result = [""];
+        const acc = [];
+        for (const part of parts) {
+            acc.push(part);
+            if (acc.length === 4 && part === "元データ") {
+                continue;
+            }
+            result.push(acc.join("/"));
+        }
+        return result;
+    }
+
+    function incrementLoadedTreeCounts(relPath, delta) {
+        const diff = Number(delta || 0);
+        if (!diff) return;
+        const paths = visibleTreePathsForFolder(relPath);
+        for (const path of paths) {
+            const wrapper = document.querySelector(`.folderTreeItem[data-path="${CSS.escape(path)}"]`);
+            if (!wrapper) continue;
+            const current = Number(wrapper.dataset.fileCount || 0);
+            const next = Math.max(0, current + diff);
+            wrapper.dataset.fileCount = String(next);
+            const countEl = wrapper.querySelector(":scope > .folderTreeRow .folderTreeCount");
+            if (countEl) countEl.textContent = `(${next})`;
+        }
+    }
+
     async function loadTreeRoot() {
         const data = await fetchJson("/api/explorer/root");
         folderTree.innerHTML = "";
-        folderTree.appendChild(makeTreeNode(data.root));
+        const rootNode = makeTreeNode(data.root);
+        folderTree.appendChild(rootNode);
+        if (data?.root?.has_children) {
+            try {
+                await setTreeExpanded(rootNode, data.root, true, { keepSiblingsOpen: true });
+            } catch (err) {
+                setQueueHint(`ツリー初期展開失敗: ${String(err?.message || err)}`, "warn");
+            }
+        }
     }
 
     async function loadFolder(path) {
@@ -354,13 +585,20 @@
             const data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(path || "")}`);
             selectedPath = data.current?.path || "";
             currentPath.textContent = formatRelativePath(data.current?.path);
-            currentMeta.textContent = `現在階層: Lv${data.current?.depth ?? 0} / 追加: ${data.current?.can_upload ? "可" : "不可"}`;
+            selectedDeleteAvailable = !!data.current?.delete_available;
+            selectedDeleteReason = String(data.current?.delete_reason || "");
+            currentMeta.textContent = `現在階層: Lv${data.current?.depth ?? 0} / 追加: ${data.current?.can_upload ? "可" : "不可"} / 削除: ${selectedDeleteAvailable ? "可" : "不可"}`;
             setUploadState(!!data.current?.can_upload, Number(data.current?.depth || 0));
             await updateKnowledgeLabel(data.current?.path || "", !!data.current?.can_upload);
 
             const shouldShowList = !!data.current?.can_upload;
             setListVisible(shouldShowList);
-            if (shouldShowList) renderTable(data.dirs, data.files);
+            if (shouldShowList) {
+                renderTable(data.dirs, data.files);
+            } else {
+                currentListDirs = [];
+                currentListFiles = [];
+            }
         } catch (err) {
             setQueueHint(`フォルダ読込失敗: ${String(err?.message || err)}`, "err");
         }
@@ -423,11 +661,22 @@
         }
     }
 
+    function switchPanel(panelName) {
+        currentPanel = panelName === "queue" ? "queue" : "list";
+        const showList = currentPanel === "list";
+
+        tabListBtn.classList.toggle("is-active", showList);
+        tabQueueBtn.classList.toggle("is-active", !showList);
+        listPanel.classList.toggle("hidden", !showList);
+        queuePanel.classList.toggle("hidden", showList);
+    }
+
     function renderQueue(items, summary) {
         const list = Array.isArray(items)
             ? items.filter((item) => String(item?.status || "") !== "completed")
             : [];
         const sum = summary || {};
+        if (queueTabCount) queueTabCount.textContent = String(list.length);
         queueSummary.textContent = `待機=${Number(sum.queued || 0)} / 処理中=${Number(sum.running || 0)} / 差分なし=${Number(sum.skipped || 0)} / エラー=${Number(sum.error || 0)}`;
 
         if (!list.length) {
@@ -444,7 +693,7 @@
                 <td>${escapeHtml(orderLabel(item))}</td>
                 <td><span class="queueStatus ${escapeHtml(statusClass(item))}">${escapeHtml(statusLabel(item))}</span></td>
                 <td class="queueCellWrap">${escapeHtml(item.folder_display || "-")}</td>
-                <td class="queueCellWrap">${escapeHtml(item.source_display_name || "-")}</td>
+                <td class="queueCellWrap">${renderNameCell(item.source_display_name || "-", false)}</td>
                 <td class="queueCellWrap">${escapeHtml(item.dataset_name || "-")}</td>
                 <td class="queueCellWrap queueProgressCell">${escapeHtml(buildProgressText(item))}</td>
                 <td>${escapeHtml(item.updated_at || "-")}</td>
@@ -472,6 +721,76 @@
         }, 2000);
     }
 
+    function splitUploadFiles(files) {
+        const supported = [];
+        const blocked = [];
+        for (const file of Array.from(files || [])) {
+            if (isSupportedFileName(file?.name || "")) {
+                supported.push(file);
+            } else {
+                blocked.push(file);
+            }
+        }
+        return { supported, blocked };
+    }
+
+    function buildBlockedFilesMessage(blocked) {
+        if (!blocked.length) return "";
+        const sample = blocked.slice(0, 3).map((file) => String(file?.name || "")).filter(Boolean).join(", ");
+        if (blocked.length <= 3) return sample;
+        return `${sample} ほか${blocked.length - 3}件`;
+    }
+
+    async function deleteFile(item) {
+        const filePath = String(item?.path || "");
+        const fileName = String(item?.name || "");
+        if (!filePath || !fileName) {
+            setQueueHint("削除対象ファイルを判定できません。", "err");
+            return;
+        }
+        if (!selectedDeleteAvailable) {
+            setQueueHint(selectedDeleteReason || "Difyに通信できないため削除できません。", "err");
+            return;
+        }
+        if (!window.confirm(`「${fileName}」を削除します。
+対応するMarkdownとDifyナレッジも削除します。`)) {
+            return;
+        }
+
+        deleteBusyPaths.add(filePath);
+        renderTable(currentListDirs, currentListFiles);
+        try {
+            setQueueHint(`削除中: ${fileName}`, "info");
+            const data = await fetchJson('/api/explorer/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ path: filePath }),
+            });
+            const deleted = data.deleted || {};
+            const parts = [
+                `ファイル削除=1`,
+                `Markdown削除=${deleted.markdown_deleted ? 1 : 0}`,
+                `Dify削除=${Number(deleted.dify_deleted_count || 0)}`,
+            ];
+            if (Number(deleted.queue_paused_count || 0) > 0) {
+                parts.push(`キュー除外=${Number(deleted.queue_paused_count || 0)}`);
+            }
+            setQueueHint(parts.join(' / '), 'ok');
+            incrementLoadedTreeCounts(selectedPath, -1);
+            await Promise.all([loadFolder(selectedPath), loadQueue()]);
+        } catch (err) {
+            setQueueHint(`削除失敗: ${String(err?.message || err)}`, 'err');
+            await Promise.all([loadFolder(selectedPath), loadQueue()]).catch(() => {});
+        } finally {
+            deleteBusyPaths.delete(filePath);
+            if (selectedCanUpload) {
+                renderTable(currentListDirs, currentListFiles);
+            }
+        }
+    }
+
     async function uploadFiles(files) {
         if (!files || files.length === 0) return;
 
@@ -480,14 +799,25 @@
             return;
         }
 
+        const { supported, blocked } = splitUploadFiles(files);
+        if (!supported.length) {
+            setQueueHint(`非対応拡張子のため追加できません。対応拡張子: ${formatAllowedExtensions()}`, "err");
+            return;
+        }
+
         const fd = new FormData();
         fd.append("path", selectedPath);
-        for (const file of files) {
+        for (const file of supported) {
             fd.append("files", file, file.name);
         }
 
         try {
-            setQueueHint(`アップロード中: ${files.length}件`, "info");
+            if (blocked.length) {
+                setQueueHint(`非対応 ${blocked.length} 件を除外してアップロードします。`, "warn");
+            } else {
+                setQueueHint(`アップロード中: ${supported.length}件`, "info");
+            }
+
             const data = await fetchJson("/api/explorer/upload", {
                 method: "POST",
                 body: fd,
@@ -499,12 +829,24 @@
             const queueCount = Array.isArray(data.queue_items) ? data.queue_items.length : 0;
             const queueErrorCount = Array.isArray(data.queue_errors) ? data.queue_errors.length : 0;
 
-            const note = `保存=${savedCount} / キュー投入=${queueCount} / 保存スキップ=${skippedCount} / 保存エラー=${errorCount} / キューエラー=${queueErrorCount}`;
-            setQueueHint(note, queueErrorCount || errorCount ? "warn" : "ok");
+            const parts = [
+                `保存=${savedCount}`,
+                `キュー投入=${queueCount}`,
+                `保存スキップ=${skippedCount}`,
+                `保存エラー=${errorCount}`,
+            ];
+            if (queueErrorCount) parts.push(`キューエラー=${queueErrorCount}`);
+            if (blocked.length) parts.push(`対象外除外=${blocked.length}`);
+            const note = parts.join(" / ");
+            setQueueHint(note, queueErrorCount || errorCount ? "warn" : (blocked.length || skippedCount ? "warn" : "ok"));
 
+            if (savedCount > 0) incrementLoadedTreeCounts(selectedPath, savedCount);
+            switchPanel("queue");
             await Promise.all([loadFolder(selectedPath), loadQueue()]);
         } catch (err) {
-            setQueueHint(`アップロード失敗: ${String(err?.message || err)}`, "err");
+            const blockedMsg = blocked.length ? ` / 除外: ${buildBlockedFilesMessage(blocked)}` : "";
+            setQueueHint(`アップロード失敗: ${String(err?.message || err)}${blockedMsg}`, "err");
+            switchPanel("queue");
         }
     }
 
@@ -538,7 +880,19 @@
     });
 
     refreshBtn.addEventListener("click", async () => {
-        await Promise.all([loadFolder(selectedPath || ""), loadQueue()]);
+        try {
+            await Promise.all([loadFolder(selectedPath || ""), loadQueue()]);
+        } catch {
+            // no-op
+        }
+    });
+
+    tabListBtn.addEventListener("click", () => {
+        switchPanel("list");
+    });
+
+    tabQueueBtn.addEventListener("click", () => {
+        switchPanel("queue");
     });
 
     window.addEventListener("resize", syncOnDemandSidebarLayout);
@@ -546,6 +900,8 @@
     (async () => {
         try {
             syncOnDemandSidebarLayout();
+            renderAllowedExtensions();
+            switchPanel("list");
             try {
                 await ensureDatasetsLoaded();
             } catch (err) {

@@ -47,6 +47,8 @@ ALLOWED_EXTS = {
     ".xlsx", ".xls", ".xlsm",
     ".ppt", ".pptx",
 }
+ALLOWED_EXTS_SORTED = tuple(sorted(ALLOWED_EXTS))
+ALLOWED_EXTS_DISPLAY = ", ".join(ALLOWED_EXTS_SORTED)
 
 MAX_INPUT_CHARS = 180_000
 DEFAULT_CHUNK_SEP = "***"
@@ -65,10 +67,38 @@ ONDEMAND_QUEUE_CHUNK_SEP = DEFAULT_CHUNK_SEP
 ONDEMAND_MONITOR_ENABLED = str(os.getenv("ONDEMAND_MONITOR_ENABLED") or "1").strip().lower() not in {"0", "false", "no", "off"}
 ONDEMAND_MONITOR_INTERVAL_SEC = max(3.0, float(os.getenv("ONDEMAND_MONITOR_INTERVAL_SEC") or "15"))
 ONDEMAND_SEEN_SIGNATURE_LIMIT = max(1000, int(os.getenv("ONDEMAND_SEEN_SIGNATURE_LIMIT") or "5000"))
+DIFY_DELETE_HEALTH_CACHE_TTL_SEC = max(3, int(os.getenv("ONDEMAND_DIFY_DELETE_HEALTH_CACHE_TTL_SEC") or "10"))
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ONDEMAND_QUEUE_LOG_PATH = os.path.join(BASE_DIR, "ondemand_queue.log")
 ONDEMAND_QUEUE_LOG_LOCK = threading.RLock()
+
+def normalize_extension(ext: str) -> str:
+    raw = str(ext or "").strip().lower()
+    if not raw:
+        return ""
+    return raw if raw.startswith(".") else f".{raw}"
+
+
+def is_allowed_extension(ext: str) -> bool:
+    return normalize_extension(ext) in ALLOWED_EXTS
+
+
+def is_allowed_filename(filename: str) -> bool:
+    safe = sanitize_upload_filename(filename)
+    if not safe:
+        return False
+    ext = os.path.splitext(safe)[1].lower()
+    return is_allowed_extension(ext)
+
+
+def get_allowed_extensions() -> List[str]:
+    return list(ALLOWED_EXTS_SORTED)
+
+
+def get_allowed_extensions_text() -> str:
+    return ALLOWED_EXTS_DISPLAY
+
 
 
 def ensure_queue_log_file() -> None:
@@ -136,6 +166,8 @@ def create_app():
             explorer_root=EXPLORER_ROOT,
             explorer_max_depth=EXPLORER_MAX_DEPTH,
             upload_allowed_depth=UPLOAD_ALLOWED_DEPTH,
+            allowed_extensions=get_allowed_extensions(),
+            allowed_extensions_text=get_allowed_extensions_text(),
         )
 
     @app.get("/api/datasets")
@@ -166,6 +198,7 @@ def create_app():
                 "root": root_info,
                 "max_depth": EXPLORER_MAX_DEPTH,
                 "upload_allowed_depth": UPLOAD_ALLOWED_DEPTH,
+                "allowed_extensions": get_allowed_extensions(),
             })
         except Exception as e:
             return jsonify({"ok": False, "error": safe_err(str(e))}), 500
@@ -180,6 +213,9 @@ def create_app():
             dirs, files = list_explorer_dir(abs_dir, EXPLORER_ROOT)
             stats_cache: Dict[str, Dict[str, int]] = {}
             current = build_dir_info(abs_dir, EXPLORER_ROOT, stats_cache)
+            delete_available, delete_reason = get_dify_delete_availability(force=False)
+            current["delete_available"] = bool(delete_available)
+            current["delete_reason"] = delete_reason or ""
             return jsonify({
                 "ok": True,
                 "current": current,
@@ -187,6 +223,7 @@ def create_app():
                 "files": files,
                 "max_depth": EXPLORER_MAX_DEPTH,
                 "upload_allowed_depth": UPLOAD_ALLOWED_DEPTH,
+                "allowed_extensions": get_allowed_extensions(),
             })
         except Exception as e:
             return jsonify({"ok": False, "error": safe_err(str(e))}), 400
@@ -234,6 +271,14 @@ def create_app():
                     skipped.append({"name": original_name_raw, "reason": "使用できないファイル名です。"})
                     continue
 
+                ext = os.path.splitext(original_name)[1].lower()
+                if not is_allowed_extension(ext):
+                    skipped.append({
+                        "name": original_name,
+                        "reason": f"非対応拡張子です: {ext or '(拡張子なし)'}",
+                    })
+                    continue
+
                 stored_name = add_upload_timestamp_prefix(original_name)
                 save_path = build_unique_upload_path(target_dir, stored_name)
                 saved_name = os.path.basename(save_path)
@@ -272,6 +317,95 @@ def create_app():
             "queue_items": queue_items,
             "queue_errors": queue_errors,
         })
+
+    @app.post("/api/explorer/delete")
+    def api_explorer_delete():
+        payload = request.get_json(silent=True) or {}
+        rel_path = str(payload.get("path") or "").strip()
+        if not rel_path:
+            return jsonify({"ok": False, "error": "削除対象ファイルのパスが指定されていません。"}), 400
+
+        try:
+            source_abs_path = resolve_explorer_path(EXPLORER_ROOT, rel_path)
+        except Exception as e:
+            return jsonify({"ok": False, "error": safe_err(str(e))}), 400
+
+        if not os.path.isfile(source_abs_path):
+            return jsonify({"ok": False, "error": "削除対象ファイルが存在しません。"}), 404
+
+        source_rel_path = make_rel_from_root(source_abs_path, EXPLORER_ROOT)
+        source_saved_name = os.path.basename(source_abs_path)
+        source_ext = os.path.splitext(source_saved_name)[1].lower()
+        if not is_allowed_extension(source_ext):
+            return jsonify({"ok": False, "error": f"非対応拡張子のため削除できません: {source_ext or '(拡張子なし)'}"}), 400
+
+        folder_abs_path = os.path.dirname(source_abs_path)
+        folder_rel_path = make_rel_from_root(folder_abs_path, EXPLORER_ROOT)
+        if path_depth_from_root(folder_abs_path, EXPLORER_ROOT) != UPLOAD_ALLOWED_DEPTH:
+            return jsonify({"ok": False, "error": f"削除できるのは Lv{UPLOAD_ALLOWED_DEPTH} フォルダ内のファイルのみです。"}), 400
+
+        delete_available, delete_reason = get_dify_delete_availability(force=True)
+        if not delete_available:
+            return jsonify({"ok": False, "error": delete_reason or "Difyに通信できないため削除できません。"}), 503
+
+        pause_info = ONDEMAND_QUEUE.pause_delete_for_source(source_rel_path)
+        if not pause_info.get("ok"):
+            return jsonify({"ok": False, "error": pause_info.get("error") or "このファイルは現在削除できません。"}), 409
+
+        original_name = strip_upload_timestamp_prefix(source_saved_name) or sanitize_upload_filename(source_saved_name)
+        if not original_name:
+            ONDEMAND_QUEUE.restore_paused_delete(pause_info, message="削除対象ファイル名を判定できなかったためキューを戻しました。")
+            return jsonify({"ok": False, "error": "削除対象ファイル名を判定できません。"}), 400
+
+        try:
+            markdown_abs_path, markdown_rel_path, markdown_name = build_ondemand_markdown_path(folder_rel_path, original_name)
+            dataset_name = build_ondemand_dataset_name(folder_rel_path)
+            dataset = find_dataset_by_name(dataset_name) if dataset_name else None
+
+            deleted_document_ids: List[str] = []
+            if dataset and markdown_name:
+                docs = find_dataset_documents_by_name(str(dataset.get("id") or ""), markdown_name)
+                for doc in docs:
+                    dify_delete_document(str(dataset.get("id") or ""), str(doc.get("id") or ""))
+                    deleted_document_ids.append(str(doc.get("id") or ""))
+                if deleted_document_ids:
+                    forget_dataset_document_name(str(dataset.get("id") or ""), markdown_name)
+                    invalidate_dataset_document_cache(str(dataset.get("id") or ""))
+
+            markdown_deleted = False
+            if markdown_abs_path and os.path.exists(markdown_abs_path):
+                os.remove(markdown_abs_path)
+                markdown_deleted = True
+
+            os.remove(source_abs_path)
+
+            ONDEMAND_QUEUE.finalize_paused_delete(
+                pause_info,
+                message="元ファイル削除によりキューから除外しました。",
+            )
+
+            return jsonify({
+                "ok": True,
+                "deleted": {
+                    "source_rel_path": source_rel_path,
+                    "source_name": source_saved_name,
+                    "markdown_rel_path": markdown_rel_path,
+                    "markdown_name": markdown_name,
+                    "source_deleted": True,
+                    "markdown_deleted": bool(markdown_deleted),
+                    "dataset_name": dataset_name,
+                    "dataset_found": bool(dataset),
+                    "dify_deleted_count": len(deleted_document_ids),
+                    "dify_deleted_ids": deleted_document_ids,
+                    "queue_paused_count": int(pause_info.get("paused_count") or 0),
+                },
+            })
+        except Exception as e:
+            ONDEMAND_QUEUE.restore_paused_delete(
+                pause_info,
+                message="削除に失敗したためキューを戻しました。",
+            )
+            return jsonify({"ok": False, "error": safe_err(str(e))}), 500
 
     @app.get("/api/ondemand/queue")
     def api_ondemand_queue():
@@ -799,6 +933,9 @@ def compute_visible_tree_stats(abs_dir: str, root_dir: str, cache: Optional[Dict
                 full = os.path.join(abs_dir, name)
                 if not os.path.isfile(full):
                     continue
+                ext = os.path.splitext(name)[1].lower()
+                if not is_allowed_extension(ext):
+                    continue
                 try:
                     st = os.stat(full)
                 except Exception:
@@ -872,6 +1009,9 @@ def list_explorer_dir(abs_dir: str, root_dir: str) -> Tuple[List[Dict[str, Any]]
             item["total_size_bytes"] = int(dir_info.get("total_size_bytes") or 0)
             dirs.append(item)
         else:
+            ext = os.path.splitext(name)[1].lower()
+            if not is_allowed_extension(ext):
+                continue
             item["type"] = "file"
             item["size_bytes"] = st.st_size
             item["depth"] = current_depth
@@ -1241,6 +1381,18 @@ def dify_get_document_detail(
     return r.json() if r.content else {}
 
 
+def dify_delete_document(dataset_id: str, document_id: str) -> None:
+    ds_id = str(dataset_id or "").strip()
+    doc_id = str(document_id or "").strip()
+    if not ds_id or not doc_id:
+        raise RuntimeError("削除対象documentを判定できません。")
+
+    url = f"{DATASET_API_BASE}/datasets/{ds_id}/documents/{doc_id}"
+    r = requests.delete(url, headers={"Authorization": f"Bearer {DATASET_API_KEY}"}, timeout=REQ_TIMEOUT_SEC)
+    if r.status_code not in {200, 202, 204}:
+        raise RuntimeError(f"document削除失敗（HTTP {r.status_code}）: {safe_err(r.text)}")
+
+
 def dify_list_segments_page(
     api_base: str,
     api_key: str,
@@ -1424,6 +1576,13 @@ _DATASET_CACHE: Dict[str, Any] = {
 _DOCUMENT_CACHE_LOCK = threading.RLock()
 _DOCUMENT_NAME_CACHE: Dict[str, Dict[str, Any]] = {}
 
+_DIFY_DELETE_HEALTH_LOCK = threading.RLock()
+_DIFY_DELETE_HEALTH_CACHE: Dict[str, Any] = {
+    "ts": 0.0,
+    "ok": False,
+    "reason": "",
+}
+
 
 def now_label() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1504,6 +1663,74 @@ def get_dataset_document_name_keys_cached(dataset_id: str, force: bool = False) 
         return set(keys)
 
 
+def find_dataset_documents_by_name(dataset_id: str, doc_name: str) -> List[Dict[str, Any]]:
+    ds_id = str(dataset_id or "").strip()
+    nm = str(doc_name or "").strip()
+    if not ds_id or not nm:
+        return []
+
+    items, _ = dify_list_documents_all(
+        api_base=DATASET_API_BASE,
+        api_key=DATASET_API_KEY,
+        dataset_id=ds_id,
+        keyword=nm,
+        limit=100,
+    )
+    name_key = normalize_name_key(nm)
+    out: List[Dict[str, Any]] = []
+    for it in (items or []):
+        if normalize_name_key((it or {}).get("name")) != name_key:
+            continue
+        doc_id = str((it or {}).get("id") or "").strip()
+        if not doc_id:
+            continue
+        out.append({
+            "id": doc_id,
+            "name": (it or {}).get("name") or "",
+            "indexing_status": (it or {}).get("indexing_status") or (it or {}).get("display_status") or "",
+        })
+    return out
+
+
+def invalidate_dataset_document_cache(dataset_id: str) -> None:
+    ds_id = str(dataset_id or "").strip()
+    if not ds_id:
+        return
+    with _DOCUMENT_CACHE_LOCK:
+        _DOCUMENT_NAME_CACHE.pop(ds_id, None)
+
+
+def get_dify_delete_availability(force: bool = False) -> Tuple[bool, str]:
+    if not DATASET_API_BASE or not DATASET_API_KEY:
+        return False, "ナレッジAPI設定が未完了のため削除できません。"
+
+    with _DIFY_DELETE_HEALTH_LOCK:
+        cache_ts = float(_DIFY_DELETE_HEALTH_CACHE.get("ts") or 0.0)
+        fresh = (time.time() - cache_ts) <= DIFY_DELETE_HEALTH_CACHE_TTL_SEC
+        if fresh and not force:
+            return bool(_DIFY_DELETE_HEALTH_CACHE.get("ok")), str(_DIFY_DELETE_HEALTH_CACHE.get("reason") or "")
+
+    try:
+        dify_list_datasets(
+            api_base=DATASET_API_BASE,
+            api_key=DATASET_API_KEY,
+            prefix="",
+            limit=1,
+        )
+        ok = True
+        reason = ""
+    except Exception as e:
+        ok = False
+        reason = f"Difyに通信できないため削除できません。{safe_err(str(e))}"
+
+    with _DIFY_DELETE_HEALTH_LOCK:
+        _DIFY_DELETE_HEALTH_CACHE["ts"] = time.time()
+        _DIFY_DELETE_HEALTH_CACHE["ok"] = ok
+        _DIFY_DELETE_HEALTH_CACHE["reason"] = reason
+
+    return ok, reason
+
+
 def dataset_document_exists_by_name(dataset_id: str, doc_name: str) -> bool:
     return normalize_name_key(doc_name) in get_dataset_document_name_keys_cached(dataset_id, force=False)
 
@@ -1517,6 +1744,20 @@ def remember_dataset_document_name(dataset_id: str, doc_name: str) -> None:
         entry = _DOCUMENT_NAME_CACHE.get(dataset_id) or {"ts": time.time(), "keys": set()}
         keys = set(entry.get("keys") or set())
         keys.add(normalize_name_key(doc_name))
+        entry["keys"] = keys
+        entry["ts"] = time.time()
+        _DOCUMENT_NAME_CACHE[dataset_id] = entry
+
+
+def forget_dataset_document_name(dataset_id: str, doc_name: str) -> None:
+    dataset_id = (dataset_id or "").strip()
+    if not dataset_id or not doc_name:
+        return
+
+    with _DOCUMENT_CACHE_LOCK:
+        entry = _DOCUMENT_NAME_CACHE.get(dataset_id) or {"ts": time.time(), "keys": set()}
+        keys = set(entry.get("keys") or set())
+        keys.discard(normalize_name_key(doc_name))
         entry["keys"] = keys
         entry["ts"] = time.time()
         _DOCUMENT_NAME_CACHE[dataset_id] = entry
@@ -1679,8 +1920,12 @@ class OnDemandQueueManager:
         dataset_name = build_ondemand_dataset_name(folder_rel)
         dataset = dict(dataset_hint) if isinstance(dataset_hint, dict) and dataset_hint else None
         message = ""
+        source_name_for_ext = source_original_name or source_saved_name
+        source_ext = os.path.splitext(source_name_for_ext or "")[1].lower()
 
-        if not API_BASE or not API_KEY:
+        if not is_allowed_extension(source_ext):
+            message = f"非対応拡張子です: {source_ext or '(拡張子なし)'}"
+        elif not API_BASE or not API_KEY:
             message = "生成AI API設定が未完了です。"
         elif not DATASET_API_BASE or not DATASET_API_KEY:
             message = "ナレッジAPI設定が未完了です。"
@@ -1871,6 +2116,87 @@ class OnDemandQueueManager:
                 return None
             return self._public_task_snapshot(task, self._queue_order_for_task_locked(task.get("id") or ""))
 
+    def pause_delete_for_source(self, source_rel_path: str) -> Dict[str, Any]:
+        rel_key = normalize_name_key((source_rel_path or "").replace("\\", "/"))
+        if not rel_key:
+            return {"ok": False, "error": "削除対象ファイルを判定できません。"}
+
+        paused_task_ids: List[str] = []
+        with self._cv:
+            for task_id in list(self._task_order):
+                task = self._tasks.get(task_id)
+                if not task:
+                    continue
+                task_rel_key = normalize_name_key(str(task.get("source_rel_path") or "").replace("\\", "/"))
+                if task_rel_key != rel_key:
+                    continue
+                if task_id == self._running_task_id or (str(task.get("status") or "") == "running" and not bool(task.get("terminal"))):
+                    return {"ok": False, "error": "このファイルは現在処理中のため削除できません。"}
+                if str(task.get("status") or "") == "queued" and not bool(task.get("terminal")):
+                    self._remove_task_from_folder_queues_locked(task_id)
+                    task["status"] = "paused_delete"
+                    task["stage"] = "削除準備"
+                    task["message"] = "ファイル削除のため一時停止しています。"
+                    task["updated_at"] = now_label()
+                    paused_task_ids.append(task_id)
+            if paused_task_ids:
+                self._prune_ready_folders_locked()
+                self._cv.notify_all()
+        return {"ok": True, "paused_task_ids": paused_task_ids, "paused_count": len(paused_task_ids)}
+
+    def restore_paused_delete(self, pause_info: Optional[Dict[str, Any]], message: str = "") -> None:
+        paused_task_ids = list((pause_info or {}).get("paused_task_ids") or [])
+        if not paused_task_ids:
+            return
+        with self._cv:
+            for task_id in paused_task_ids:
+                task = self._tasks.get(task_id)
+                if not task or bool(task.get("terminal")):
+                    continue
+                if str(task.get("status") or "") != "paused_delete":
+                    continue
+                task["status"] = "queued"
+                task["stage"] = "順番待ち"
+                task["message"] = message or "削除処理を取り消したためキューへ戻しました。"
+                task["updated_at"] = now_label()
+                folder = str(task.get("folder_rel_path") or "")
+                fq = self._folder_queues.setdefault(folder, deque())
+                if task_id not in fq:
+                    fq.appendleft(task_id)
+                self._ensure_folder_ready_locked(folder)
+                append_ondemand_queue_log("task_delete_restore", task)
+            self._prune_ready_folders_locked()
+            self._cv.notify_all()
+
+    def finalize_paused_delete(self, pause_info: Optional[Dict[str, Any]], message: str = "") -> None:
+        paused_task_ids = list((pause_info or {}).get("paused_task_ids") or [])
+        if not paused_task_ids:
+            return
+        with self._cv:
+            for task_id in paused_task_ids:
+                task = self._tasks.get(task_id)
+                if not task or bool(task.get("terminal")):
+                    continue
+                if str(task.get("status") or "") != "paused_delete":
+                    continue
+                task["status"] = "completed"
+                task["stage"] = "削除済み"
+                task["message"] = message or "元ファイル削除によりキューから除外しました。"
+                task["terminal"] = True
+                task["finished_at"] = now_label()
+                task["updated_at"] = task["finished_at"]
+                task["result"] = "deleted"
+                doc_key = str(task.get("doc_key") or "")
+                if doc_key and self._active_doc_keys.get(doc_key) == task_id:
+                    self._active_doc_keys.pop(doc_key, None)
+                self._remember_handled_source_signature_locked(
+                    str(task.get("source_signature") or ""),
+                    self._public_task_snapshot(task, queue_order=None),
+                )
+                append_ondemand_queue_log("task_deleted", task)
+            self._prune_ready_folders_locked()
+            self._cv.notify_all()
+
     def remember_handled_source_signature(self, source_signature: str, status: str, stage: str, message: str, result: str) -> None:
         snapshot = {
             "id": "",
@@ -2025,6 +2351,35 @@ class OnDemandQueueManager:
             if str(task.get("source_signature") or "") == sig:
                 return task
         return None
+
+    def _remove_task_from_folder_queues_locked(self, task_id: str) -> None:
+        if not task_id:
+            return
+        empty_folders: List[str] = []
+        for folder, q in self._folder_queues.items():
+            try:
+                while task_id in q:
+                    q.remove(task_id)
+            except ValueError:
+                pass
+            if not q:
+                empty_folders.append(folder)
+        for folder in empty_folders:
+            self._folder_queues.pop(folder, None)
+
+    def _prune_ready_folders_locked(self) -> None:
+        kept = deque()
+        seen = set()
+        for folder in self._ready_folders:
+            if folder in seen:
+                continue
+            if folder == self._running_folder:
+                continue
+            if not self._folder_queues.get(folder):
+                continue
+            kept.append(folder)
+            seen.add(folder)
+        self._ready_folders = kept
 
     def _task_is_in_any_queue_locked(self, task_id: str) -> bool:
         if not task_id:

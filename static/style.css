@@ -7,15 +7,15 @@
     --line: rgba(0, 0, 0, .10);
     --input-line: rgba(0, 0, 0, .16);
     --accent: #7c3aed;
-    --accent-soft: rgba(124, 58, 237, .10);
-    --accent-line: rgba(124, 58, 237, .28);
+    --accent-soft: rgba(124, 58, 237, .08);
+    --accent-line: rgba(124, 58, 237, .26);
     --ok: #16a34a;
     --bad: #b91c1c;
     --warn: #b45309;
     --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --shadow-1: 0 10px 24px rgba(0, 0, 0, .08);
-    --sidebar-w: 210px;
-    --ondemand-topbar-h: 76px;
+    --shadow-1: 0 4px 14px rgba(0, 0, 0, .05);
+    --sidebar-w: 196px;
+    --ondemand-topbar-h: 44px;
 }
 
 * { box-sizing: border-box; }
@@ -24,19 +24,30 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.45 "Inter", "Noto Sans JP", "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    font-family: "Noto Sans JP", system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+}
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
 }
 button {
-    height: 38px;
-    padding: 0 14px;
+    height: 30px;
+    padding: 0 11px;
     border: 1px solid var(--input-line);
-    border-radius: 10px;
+    border-radius: 8px;
     background: #fff;
     color: var(--text);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
 }
-button:disabled { opacity: .55; cursor: not-allowed; }
+button:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
 .hidden { display: none !important; }
 .card {
     border: 1px solid var(--line);
@@ -44,60 +55,31 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     box-shadow: var(--shadow-1);
 }
 .miniTitle {
-    margin-bottom: 6px;
+    margin-bottom: 2px;
     color: var(--muted);
-    font-size: 13px;
+    font-size: 11px;
+    line-height: 1.15;
 }
 .topbar {
     position: fixed;
     top: 0;
-    left: 0;
+    left: var(--sidebar-w);
     right: 0;
     z-index: 100;
     margin: 0;
-    padding: 12px 18px;
+    min-height: var(--ondemand-topbar-h);
+    padding: 8px 12px;
     border-bottom: 1px solid var(--line);
     background: var(--panel);
     box-shadow: var(--shadow-1);
-}
-.topbar-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-.topbar-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
 }
 .topbar-title {
-    font-size: 20px;
-    font-weight: 900;
-    letter-spacing: .02em;
-}
-.topbar-subtitle {
-    color: var(--muted);
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
-}
-.topbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.model-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 14px;
-    border: 1px solid var(--accent-line);
-    border-radius: 999px;
-    background: var(--accent-soft);
-    font-size: 13px;
-    font-weight: 800;
-    white-space: nowrap;
+    letter-spacing: .02em;
+    line-height: 1.15;
 }
 .ondemandGrid {
     min-height: 100vh;
@@ -105,12 +87,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 }
 .ondemandSidebarCard {
     position: fixed;
-    top: var(--ondemand-topbar-h);
+    top: 0;
     left: 0;
     bottom: 0;
+    z-index: 101;
     width: var(--sidebar-w);
     margin: 0;
-    padding: 10px 10px 12px;
+    padding: 5px 5px 6px;
     border-top: none;
     border-left: none;
     border-radius: 0;
@@ -119,102 +102,166 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .ondemandMainCard {
     min-height: calc(100vh - var(--ondemand-topbar-h));
     margin-left: var(--sidebar-w);
-    padding: 18px;
+    padding: 8px 9px 9px;
     border-top: none;
     border-right: none;
     border-bottom: none;
     border-radius: 0;
 }
 .ondemandSectionHead h2 {
-    margin: 0 0 8px;
-    font-size: 14px;
-    font-weight: 900;
+    margin: 0 0 2px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.1;
 }
 .folderTreeMini {
     display: flex;
     flex-direction: column;
+    gap: 0;
+    font-size: 12px;
 }
-.folderTreeItem { display: block; }
+.folderTreeItem {
+    display: block;
+    margin: 0;
+    padding: 0;
+}
 .folderTreeRow {
     display: flex;
     align-items: center;
-    gap: 4px;
-    border-bottom: 1px solid var(--line);
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    border-bottom: none;
 }
 .folderTreeChildren {
-    margin-left: 10px;
+    margin: 0 0 0 10px;
+    padding: 0;
     display: flex;
     flex-direction: column;
 }
 .folderTreeChildren[hidden] { display: none !important; }
 .folderTreeToggle {
-    width: 18px;
-    min-width: 18px;
-    height: 18px;
+    width: 13px;
+    min-width: 13px;
+    height: 13px;
+    margin: 0;
     padding: 0;
-    border-radius: 4px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
     box-shadow: none;
     font-size: 11px;
-    font-weight: 900;
+    font-weight: 500;
+    line-height: 1;
 }
 .folderTreeNode {
     flex: 1 1 auto;
     width: 100%;
     min-width: 0;
-    min-height: 30px;
-    padding: 0 6px;
+    min-height: 17px;
+    margin: 0;
+    padding: 0 1px 0 0;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 3px;
     background: transparent;
     box-shadow: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 4px;
     text-align: left;
 }
-.folderTreeNode:hover { background: rgba(124, 58, 237, .05); }
+.folderTreeNode:hover {
+    background: rgba(124, 58, 237, .05);
+}
 .folderTreeItem.selected > .folderTreeRow > .folderTreeNode {
     border-color: var(--accent-line);
-    background: rgba(124, 58, 237, .09);
+    background: rgba(124, 58, 237, .08);
+}
+.folderTreeItem[data-depth="0"] > .folderTreeRow > .folderTreeNode {
+    font-weight: 500;
+}
+.folderTreeMain {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    overflow: hidden;
 }
 .folderTreeName {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 12.5px;
+    font-weight: 400;
+    line-height: 1;
+}
+.folderTreeCount {
+    flex: 0 0 auto;
+    color: var(--bad);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
 }
 .folderTreeLv {
     flex: 0 0 auto;
     color: var(--muted);
-    font-size: 11px;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1;
 }
 .ondemandTopBar {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 14px;
+    gap: 8px;
 }
-.ondemandCurrentWrap { min-width: 0; }
+.ondemandCurrentWrap {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.ondemandCurrentCompact {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.ondemandInfoLine {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    align-items: start;
+    gap: 6px;
+}
+.ondemandInfoLabel {
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.15;
+}
+.ondemandInfoValue {
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.2;
+}
 .ondemandCurrentPath {
-    font-size: 18px;
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 600;
     word-break: break-all;
 }
 .ondemandCurrentMeta {
-    margin-top: 4px;
+    margin-top: 0;
     color: var(--muted);
-    font-size: 13px;
 }
-.ondemandKnowledgeBlock { margin-top: 14px; }
 .ondemandKnowledgeLabel {
-    padding: 10px 12px;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 2px 6px;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 6px;
     background: var(--surface);
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
     word-break: break-word;
 }
 .ondemandKnowledgeLabel.ok {
@@ -227,62 +274,143 @@ button:disabled { opacity: .55; cursor: not-allowed; }
     background: rgba(185, 28, 28, .06);
     color: #991b1b;
 }
+.ondemandTopActions {
+    flex: 0 0 auto;
+}
+.ondemandTopActions button {
+    height: 27px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 11px;
+}
 .ondemandDropZone {
-    margin-top: 18px;
-    padding: 18px 14px;
-    border: 2px dashed rgba(124, 58, 237, .45);
-    border-radius: 14px;
-    background: rgba(124, 58, 237, .05);
-    text-align: center;
+    margin-top: 7px;
+    padding: 7px 9px;
+    border: 2px dashed rgba(124, 58, 237, .42);
+    border-radius: 10px;
+    background: rgba(124, 58, 237, .04);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 .ondemandDropZone.disabled {
     opacity: .55;
     border-color: rgba(0, 0, 0, .14);
     background: rgba(0, 0, 0, .03);
 }
-.ondemandDropZone.dragover { background: rgba(124, 58, 237, .12); }
-.ondemandDropTitle { font-size: 16px; font-weight: 900; }
-.ondemandDropSub {
-    margin: 6px 0 12px;
-    color: var(--muted);
-    font-size: 13px;
+.ondemandDropZone.dragover {
+    background: rgba(124, 58, 237, .10);
 }
-.ondemandQueueSection,
-.ondemandListSection {
-    margin-top: 18px;
-    padding: 14px;
+.ondemandDropText {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.ondemandDropTitle {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.15;
+}
+.ondemandDropSub,
+.ondemandDropExts {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.15;
+    word-break: break-word;
+}
+.ondemandDropExts {
+    font-family: var(--mono);
+}
+.ondemandDropActions {
+    flex: 0 0 auto;
+}
+.ondemandDropActions button {
+    height: 27px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 11px;
+}
+.ondemandPanelSection {
+    margin-top: 9px;
+    padding: 7px;
     border: 1px solid var(--line);
-    border-radius: 14px;
+    border-radius: 10px;
     background: var(--surface);
+}
+.ondemandPanelTabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 7px;
+    flex-wrap: wrap;
+}
+.ondemandTabBtn {
+    height: 27px;
+    padding: 0 10px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+}
+.ondemandTabBtn.is-active {
+    border-color: var(--accent-line);
+    background: rgba(124, 58, 237, .09);
+    color: #5b21b6;
+}
+.ondemandTabCount {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    border: 1px solid rgba(124, 58, 237, .16);
+    background: rgba(124, 58, 237, .08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    line-height: 1;
+}
+.ondemandPanel {
+    min-width: 0;
 }
 .ondemandListHead {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
+    gap: 10px;
+    margin-bottom: 5px;
 }
-.ondemandListState { color: var(--muted); font-size: 12px; }
-.ondemandQueueHint {
-    margin-bottom: 10px;
+.ondemandListState {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 10px;
+    line-height: 1.15;
+}
+.ondemandQueueHint {
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.15;
 }
 .ondemandQueueHint.ok { color: var(--ok); }
 .ondemandQueueHint.warn { color: var(--warn); }
 .ondemandQueueHint.err { color: var(--bad); }
+.ondemandQueueHint.info { color: #5b21b6; }
 .ondemandEmptyBox {
-    padding: 20px 12px;
+    padding: 10px 8px;
     border: 1px dashed var(--line);
-    border-radius: 12px;
-    background: rgba(255,255,255,.7);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .74);
     color: var(--muted);
     text-align: center;
+    font-size: 11px;
+    line-height: 1.2;
 }
 .ondemandTableWrap {
     overflow: auto;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: 8px;
     background: #fff;
 }
 .ondemandTable {
@@ -292,42 +420,127 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 }
 .ondemandTable th,
 .ondemandTable td {
-    padding: 8px 9px;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--line);
     text-align: left;
-    font-size: 12px;
-    vertical-align: top;
+    font-size: 10.5px;
+    line-height: 1.15;
+    vertical-align: middle;
 }
 .ondemandTable th {
-    background: rgba(0,0,0,.02);
+    background: rgba(0, 0, 0, .02);
     color: var(--muted);
-    font-weight: 800;
+    font-weight: 700;
 }
-.ondemandTable tr:last-child td { border-bottom: none; }
-.clickable-row { cursor: pointer; }
-.clickable-row:hover { background: rgba(124, 58, 237, .04); }
+.ondemandQueueTable th,
+.ondemandQueueTable td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+.ondemandTable tr:last-child td {
+    border-bottom: none;
+}
+.clickable-row {
+    cursor: pointer;
+}
+.clickable-row:hover {
+    background: rgba(124, 58, 237, .04);
+}
 .empty-cell,
-.queueCellWrap { word-break: break-word; }
+.queueCellWrap {
+    word-break: break-word;
+}
+.fileNameCell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+}
+.fileTypeIcon {
+    flex: 0 0 auto;
+    width: 16px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1;
+}
+.fileNameText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fileDeleteBtn {
+    height: 22px;
+    min-width: 52px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border-color: rgba(185, 28, 28, .20);
+    background: rgba(185, 28, 28, .04);
+    color: var(--bad);
+    font-size: 10.5px;
+}
+.fileDeleteBtn:hover:enabled {
+    background: rgba(185, 28, 28, .08);
+}
+.fileDeleteBtn:disabled {
+    color: var(--muted);
+    border-color: var(--line);
+    background: rgba(0, 0, 0, .03);
+}
 .queueStatus {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
+    padding: 1px 5px;
     border-radius: 999px;
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 10px;
+    font-weight: 700;
     border: 1px solid var(--line);
     background: #fff;
+    line-height: 1.15;
 }
-.queueStatus.ok { color: var(--ok); border-color: rgba(22,163,74,.22); background: rgba(22,163,74,.08); }
-.queueStatus.err { color: var(--bad); border-color: rgba(185,28,28,.22); background: rgba(185,28,28,.06); }
-.queueStatus.warn { color: var(--warn); border-color: rgba(180,83,9,.24); background: rgba(180,83,9,.08); }
-.queueStatus.info { color: #5b21b6; border-color: rgba(124,58,237,.26); background: rgba(124,58,237,.08); }
-.queueProgressCell { font-family: var(--mono); }
+.queueStatus.ok {
+    color: var(--ok);
+    border-color: rgba(22, 163, 74, .22);
+    background: rgba(22, 163, 74, .08);
+}
+.queueStatus.err {
+    color: var(--bad);
+    border-color: rgba(185, 28, 28, .22);
+    background: rgba(185, 28, 28, .06);
+}
+.queueStatus.warn {
+    color: var(--warn);
+    border-color: rgba(180, 83, 9, .24);
+    background: rgba(180, 83, 9, .08);
+}
+.queueStatus.info {
+    color: #5b21b6;
+    border-color: rgba(124, 58, 237, .26);
+    background: rgba(124, 58, 237, .08);
+}
+.queueStatus.skip {
+    color: #4b5563;
+    border-color: rgba(107, 114, 128, .22);
+    background: rgba(107, 114, 128, .08);
+}
+.queueProgressCell {
+    font-family: var(--mono);
+}
+.ondemandTable td:last-child {
+    white-space: nowrap;
+}
+
 @media (max-width: 980px) {
+    .topbar {
+        left: 0;
+        padding: 8px 10px;
+    }
     .ondemandSidebarCard {
         position: static;
         width: 100%;
         min-height: auto;
+        z-index: auto;
         border-right: 1px solid var(--line);
     }
     .ondemandMainCard {
@@ -335,11 +548,24 @@ button:disabled { opacity: .55; cursor: not-allowed; }
         min-height: auto;
     }
 }
+
 @media (max-width: 640px) {
-    .topbar { padding: 10px 12px; }
-    .topbar-row,
-    .ondemandTopBar { flex-direction: column; align-items: stretch; }
-    .topbar-title { font-size: 18px; }
-    .model-pill { width: 100%; }
-    .ondemandMainCard { padding: 12px; }
+    .topbar-title {
+        font-size: 15px;
+    }
+    .ondemandTopBar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ondemandDropZone {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ondemandInfoLine {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+    .ondemandMainCard {
+        padding: 8px;
+    }
 }

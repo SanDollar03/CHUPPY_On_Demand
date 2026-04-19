@@ -262,6 +262,62 @@ def create_app():
             )
             return jsonify({"ok": False, "error": safe_err(str(e))}), 500
 
+    @app.post("/api/ondemand/queue/<task_id>/delete")
+    def api_ondemand_queue_task_delete(task_id):
+        result = ONDEMAND_QUEUE.get_error_task_for_action(task_id)
+        if not result.get("ok"):
+            return jsonify({"ok": False, "error": result.get("error")}), 400
+        task = result["task"]
+        try:
+            deleted = delete_ondemand_artifacts(
+                folder_rel_path=str(task.get("folder_rel_path") or ""),
+                source_abs_path=str(task.get("source_abs_path") or ""),
+                source_saved_name=str(task.get("source_saved_name") or ""),
+                source_original_name=str(task.get("source_original_name") or ""),
+                require_dify_health=False,
+                tolerant=True,
+            )
+        except Exception as e:
+            return jsonify({"ok": False, "error": safe_err(str(e))}), 500
+        ONDEMAND_QUEUE.remove_error_task(task_id)
+        return jsonify({"ok": True, "deleted": deleted})
+
+    @app.post("/api/ondemand/queue/<task_id>/retry")
+    def api_ondemand_queue_task_retry(task_id):
+        result = ONDEMAND_QUEUE.get_error_task_for_action(task_id)
+        if not result.get("ok"):
+            return jsonify({"ok": False, "error": result.get("error")}), 400
+        task = result["task"]
+
+        dataset_id = str(task.get("dataset_id") or "")
+        dataset_name = str(task.get("dataset_name") or "")
+        if not dataset_id and dataset_name:
+            try:
+                ds = find_dataset_by_name(dataset_name)
+                if ds:
+                    dataset_id = str(ds.get("id") or "")
+            except Exception:
+                pass
+
+        if not dataset_id:
+            return jsonify({"ok": False, "error": "ナレッジが見つかりません。再試行できません。"}), 400
+        if not str(task.get("markdown_abs_path") or ""):
+            return jsonify({"ok": False, "error": "Markdownパスが不明なため再試行できません。"}), 400
+
+        try:
+            cleanup = cleanup_markdown_and_dify(
+                markdown_abs_path=str(task.get("markdown_abs_path") or ""),
+                dataset_id=dataset_id,
+                markdown_name=str(task.get("markdown_name") or ""),
+            )
+        except Exception as e:
+            return jsonify({"ok": False, "error": safe_err(str(e))}), 500
+
+        retry_result = ONDEMAND_QUEUE.retry_error_task(task_id, dataset_id_override=dataset_id)
+        if not retry_result.get("ok"):
+            return jsonify({"ok": False, "error": retry_result.get("error")}), 400
+        return jsonify({"ok": True, "task": retry_result.get("task"), "cleanup": cleanup})
+
     @app.get("/api/ondemand/queue")
     def api_ondemand_queue():
         try:

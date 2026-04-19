@@ -1889,6 +1889,48 @@ def delete_ondemand_artifacts(
     }
 
 
+def cleanup_markdown_and_dify(
+    markdown_abs_path: str,
+    dataset_id: str,
+    markdown_name: str,
+) -> Dict[str, Any]:
+    errors: List[str] = []
+    markdown_deleted = False
+    dify_deleted_count = 0
+
+    if markdown_abs_path and os.path.exists(markdown_abs_path):
+        try:
+            os.remove(markdown_abs_path)
+            markdown_deleted = True
+        except Exception as e:
+            errors.append(f"Markdown削除失敗: {safe_err(str(e))}")
+
+    if dataset_id and markdown_name and DATASET_API_BASE and DATASET_API_KEY:
+        try:
+            docs = find_dataset_documents_by_name(dataset_id, markdown_name)
+            for doc in docs:
+                doc_id = str(doc.get("id") or "")
+                if not doc_id:
+                    continue
+                try:
+                    dify_delete_document(dataset_id, doc_id)
+                    dify_deleted_count += 1
+                except Exception as e:
+                    errors.append(f"Dify削除失敗: {safe_err(str(e))}")
+            if docs:
+                invalidate_dataset_document_cache(dataset_id)
+                if dify_deleted_count == len(docs):
+                    forget_dataset_document_name(dataset_id, markdown_name)
+        except Exception as e:
+            errors.append(f"Difyナレッジ取得失敗: {safe_err(str(e))}")
+
+    return {
+        "markdown_deleted": markdown_deleted,
+        "dify_deleted_count": dify_deleted_count,
+        "errors": errors,
+    }
+
+
 def iter_ondemand_watch_folders(root_dir: str):
     root_abs = resolve_explorer_path(root_dir, "")
 

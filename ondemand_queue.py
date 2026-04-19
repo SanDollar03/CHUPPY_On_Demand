@@ -966,6 +966,72 @@ class OnDemandQueueManager:
             )
 
 
+    def get_error_task_for_action(self, task_id: str) -> Dict[str, Any]:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return {"ok": False, "error": "タスクが見つかりません。"}
+            if str(task.get("status") or "") != "error" or not bool(task.get("terminal")):
+                return {"ok": False, "error": "エラー状態のタスクのみ操作できます。"}
+            if task_id == self._running_task_id:
+                return {"ok": False, "error": "処理中のため操作できません。"}
+            return {"ok": True, "task": dict(task)}
+
+    def remove_error_task(self, task_id: str) -> None:
+        with self._cv:
+            task = self._tasks.get(task_id)
+            if not task:
+                return
+            self._remove_task_from_folder_queues_locked(task_id)
+            self._tasks.pop(task_id, None)
+            self._task_order = [tid for tid in self._task_order if tid != task_id]
+            doc_key = str(task.get("doc_key") or "")
+            if doc_key and self._active_doc_keys.get(doc_key) == task_id:
+                self._active_doc_keys.pop(doc_key, None)
+            append_ondemand_queue_log("task_deleted", task, status="deleted")
+            self._prune_ready_folders_locked()
+            self._cv.notify_all()
+
+    def retry_error_task(self, task_id: str, dataset_id_override: str = "") -> Dict[str, Any]:
+        with self._cv:
+            task = self._tasks.get(task_id)
+            if not task:
+                return {"ok": False, "error": "タスクが見つかりません。"}
+            if str(task.get("status") or "") != "error" or not bool(task.get("terminal")):
+                return {"ok": False, "error": "エラー状態のタスクのみ操作できます。"}
+            if task_id == self._running_task_id:
+                return {"ok": False, "error": "処理中のため操作できません。"}
+
+            dataset_id = dataset_id_override or str(task.get("dataset_id") or "")
+            dataset_name = str(task.get("dataset_name") or "")
+            md_abs_path = str(task.get("markdown_abs_path") or "")
+            md_rel_path = str(task.get("markdown_rel_path") or "")
+            md_name = str(task.get("markdown_name") or "")
+
+            if not dataset_id:
+                return {"ok": False, "error": "ナレッジIDが不明なため再試行できません。"}
+            if not md_abs_path:
+                return {"ok": False, "error": "Markdownパスが不明なため再試行できません。"}
+
+            dataset = {"id": dataset_id}
+            doc_key = build_ondemand_doc_key(dataset_id, dataset_name, md_name)
+
+            revived = self._revive_failed_task_locked(
+                task,
+                dataset=dataset,
+                md_abs_path=md_abs_path,
+                md_rel_path=md_rel_path,
+                md_name=md_name,
+                doc_key=doc_key,
+                queue_message="手動再試行によりキューの最後尾に追加しました。",
+            )
+            self._cv.notify_all()
+            return {
+                "ok": True,
+                "task": self._public_task_snapshot(revived, self._queue_order_for_task_locked(task_id)),
+            }
+
+
 class OnDemandFolderMonitor:
     def __init__(self, queue_manager: OnDemandQueueManager):
         self._queue = queue_manager

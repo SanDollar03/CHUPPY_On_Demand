@@ -860,6 +860,32 @@
         queuePanel.classList.toggle("hidden", showList);
     }
 
+    async function deleteQueueTask(taskId, fileName) {
+        if (!window.confirm(`「${fileName}」をキューから削除します。\n元ファイル・Markdown・Difyナレッジも削除します。`)) return;
+        try {
+            setQueueHint(`削除中: ${fileName}`, "info");
+            await fetchJson(`/api/ondemand/queue/${encodeURIComponent(taskId)}/delete`, { method: "POST" });
+            setQueueHint(`削除完了: ${fileName}`, "ok");
+            await Promise.all([loadFolder(selectedPath, { silentError: true }), loadQueue()]);
+        } catch (err) {
+            setQueueHint(`削除失敗: ${String(err?.message || err)}`, "err");
+            await loadQueue().catch(() => {});
+        }
+    }
+
+    async function retryQueueTask(taskId, fileName) {
+        if (!window.confirm(`「${fileName}」を再試行します。\nMarkdown・Difyナレッジを削除してキューの最後尾に追加します。`)) return;
+        try {
+            setQueueHint(`再試行準備中: ${fileName}`, "info");
+            await fetchJson(`/api/ondemand/queue/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
+            setQueueHint(`再試行をキューに追加しました: ${fileName}`, "ok");
+            await loadQueue().catch(() => {});
+        } catch (err) {
+            setQueueHint(`再試行失敗: ${String(err?.message || err)}`, "err");
+            await loadQueue().catch(() => {});
+        }
+    }
+
     function renderQueue(items, summary) {
         const list = Array.isArray(items)
             ? items.filter((item) => String(item?.status || "") !== "completed")
@@ -877,6 +903,9 @@
         queueTableBody.innerHTML = "";
 
         for (const item of list) {
+            const isError = String(item?.status || "") === "error";
+            const taskId = String(item?.id || "");
+            const fileName = String(item?.source_display_name || "-");
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${escapeHtml(orderLabel(item))}</td>
@@ -886,7 +915,17 @@
                 <td class="queueCellWrap">${escapeHtml(item.dataset_name || "-")}</td>
                 <td class="queueCellWrap queueProgressCell">${escapeHtml(buildProgressText(item))}</td>
                 <td>${escapeHtml(item.updated_at || "-")}</td>
+                <td class="queueActionCell">${isError ? `
+                    <button type="button" class="queueRetryBtn" data-task-id="${escapeHtml(taskId)}" title="Markdown・Difyを削除してキュー最後尾に再追加">再試行</button>
+                    <button type="button" class="queueDeleteBtn" data-task-id="${escapeHtml(taskId)}" title="元ファイル・Markdown・Difyを全削除">削除</button>
+                ` : "-"}</td>
             `;
+            if (isError && taskId) {
+                const retryBtn = tr.querySelector(".queueRetryBtn");
+                const deleteBtn = tr.querySelector(".queueDeleteBtn");
+                if (retryBtn) retryBtn.addEventListener("click", () => retryQueueTask(taskId, fileName));
+                if (deleteBtn) deleteBtn.addEventListener("click", () => deleteQueueTask(taskId, fileName));
+            }
             queueTableBody.appendChild(tr);
         }
     }

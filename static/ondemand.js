@@ -5,6 +5,7 @@
             maxDepth: 5,
             uploadAllowedDepth: 5,
             allowedExtensions: [],
+            maxUploadFileSizeBytes: 100 * 1024 * 1024,
         };
 
         const el = document.getElementById("ondemand-config");
@@ -29,8 +30,18 @@
         .filter(Boolean)))
         .sort();
     const ALLOWED_EXTENSION_SET = new Set(ALLOWED_EXTENSIONS);
+    const MAX_UPLOAD_FILE_SIZE_BYTES = Math.max(1, Number(cfg.maxUploadFileSizeBytes || (100 * 1024 * 1024)));
     const TREE_COLLAPSED_MARK = ">";
     const TREE_EXPANDED_MARK = "∨";
+    const LV5_TREE_LABELS = {
+        "安全": "💞 安全",
+        "品質": "🏅 品質",
+        "生産": "🏭 生産",
+        "保全": "🪛 保全",
+        "環境": "🌳 環境",
+        "原価": "💰 原価",
+        "人材育成": "🏫 人材育成",
+    };
 
     const folderTree = document.getElementById("folderTree");
     const currentPath = document.getElementById("currentPath");
@@ -54,6 +65,7 @@
     const listTableWrap = document.getElementById("listTableWrap");
     const listState = document.getElementById("listState");
     const fileTableBody = document.getElementById("fileTableBody");
+    const listSortButtons = Array.from(document.querySelectorAll('.tableSortBtn[data-sortable="1"]'));
 
     const queueSummary = document.getElementById("queueSummary");
     const queueHint = document.getElementById("queueHint");
@@ -70,7 +82,10 @@
     let currentPanel = "list";
     let currentListDirs = [];
     let currentListFiles = [];
+    let currentListSortKey = "mtime";
+    let currentListSortDirection = "desc";
     const deleteBusyPaths = new Set();
+    let folderStatusRefreshBusy = false;
 
     const datasetState = {
         loaded: false,
@@ -156,14 +171,27 @@
         return data;
     }
 
+    async function fetchFolderData(path, options = {}) {
+        const params = new URLSearchParams();
+        params.set("path", path || "");
+        if (options.forceStatus) {
+            params.set("force_status", "1");
+        }
+        return fetchJson(`/api/explorer/list?${params.toString()}`);
+    }
+
     function formatAllowedExtensions() {
         if (!ALLOWED_EXTENSIONS.length) return "-";
         return ALLOWED_EXTENSIONS.join(", ");
     }
 
+    function formatUploadSizeLimit() {
+        return formatBytes(MAX_UPLOAD_FILE_SIZE_BYTES);
+    }
+
     function renderAllowedExtensions() {
         if (!dropZoneExts) return;
-        dropZoneExts.textContent = `追加可能拡張子: ${formatAllowedExtensions()}`;
+        dropZoneExts.textContent = `追加可能拡張子: ${formatAllowedExtensions()} / 1ファイル最大 ${formatUploadSizeLimit()}`;
     }
 
     async function ensureDatasetsLoaded() {
@@ -213,11 +241,11 @@
         if (selectedCanUpload) {
             dropZone.classList.remove("disabled");
             fileSelectBtn.disabled = false;
-            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダです。対応拡張子のみ追加できます。`;
+            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダです。対応拡張子のみ追加できます。1ファイル ${formatUploadSizeLimit()} 以下のみ追加可能です。`;
         } else {
             dropZone.classList.add("disabled");
             fileSelectBtn.disabled = true;
-            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダ選択時のみ追加できます（現在: Lv${selectedDepth}）`;
+            dropZoneSub.textContent = `Lv${UPLOAD_ALLOWED_DEPTH}フォルダ選択時のみ追加できます（現在: Lv${selectedDepth}）。1ファイル ${formatUploadSizeLimit()} を超えるものは追加できません。`;
         }
     }
 
@@ -277,49 +305,190 @@
         `;
     }
 
+    function normalizeRegistrationStatusCode(item) {
+        const code = String(item?.registration_status || "").toLowerCase();
+        if (["registered", "unregistered", "error", "registering"].includes(code)) return code;
+        return "unregistered";
+    }
+
+    function registrationStatusLabel(item) {
+        const code = normalizeRegistrationStatusCode(item);
+        const label = String(item?.registration_status_label || "").trim();
+        if (label) return label;
+        if (code === "registered") return "登録済";
+        if (code === "registering") return "登録中";
+        if (code === "error") return "エラー";
+        return "未登録";
+    }
+
+    function registrationStatusClass(item) {
+        const code = normalizeRegistrationStatusCode(item);
+        if (code === "registered") return "ok";
+        if (code === "registering") return "info";
+        if (code === "error") return "err";
+        return "skip";
+    }
+
+    function registrationStatusTitle(item) {
+        const parts = [];
+        const detail = String(item?.registration_status_detail || "").trim();
+        const stage = String(item?.registration_queue_stage || "").trim();
+        const queueStatus = String(item?.registration_queue_status || "").trim();
+        const queueOrder = Number(item?.registration_queue_order || 0);
+        if (detail) parts.push(detail);
+        if (stage) parts.push(`段階: ${stage}`);
+        if (queueStatus) parts.push(`キュー状態: ${queueStatus}`);
+        if (queueOrder > 0) parts.push(`順番: #${queueOrder}`);
+        return parts.join(" / ") || registrationStatusLabel(item);
+    }
+
+    function renderRegistrationStatusCell(item, isDir = false) {
+        if (isDir) {
+            return `<span class="queueStatus skip">-</span>`;
+        }
+        const klass = escapeHtml(registrationStatusClass(item));
+        const label = escapeHtml(registrationStatusLabel(item));
+        const title = escapeHtml(registrationStatusTitle(item));
+        return `<span class="queueStatus ${klass}" title="${title}">${label}</span>`;
+    }
+
+    function getRegistrationStatusSortRank(item, isDir = false) {
+        if (isDir) return -1;
+        const code = normalizeRegistrationStatusCode(item);
+        if (code === "registered") return 1;
+        if (code === "registering") return 2;
+        if (code === "error") return 3;
+        return 4;
+    }
+
+    function getListItemSortValue(item, sortKey) {
+        const isDir = String(item?._rowType || "") === "dir";
+        if (sortKey === "name") return String(item?.name || "").toLocaleLowerCase("ja");
+        if (sortKey === "status") return getRegistrationStatusSortRank(item, isDir);
+        if (sortKey === "size") return Number(isDir ? (item?.total_size_bytes || 0) : (item?.size_bytes || 0));
+        const raw = String(item?.mtime || "").replace(" ", "T");
+        const time = Date.parse(raw);
+        return Number.isFinite(time) ? time : 0;
+    }
+
+    function compareListItems(a, b) {
+        const av = getListItemSortValue(a, currentListSortKey);
+        const bv = getListItemSortValue(b, currentListSortKey);
+        let cmp = 0;
+        if (typeof av === "number" && typeof bv === "number") {
+            cmp = av === bv ? 0 : (av < bv ? -1 : 1);
+        } else {
+            cmp = String(av).localeCompare(String(bv), "ja", { numeric: true, sensitivity: "base" });
+        }
+        if (!cmp) {
+            const byName = String(a?.name || "").localeCompare(String(b?.name || ""), "ja", { numeric: true, sensitivity: "base" });
+            if (byName) cmp = byName;
+        }
+        if (!cmp) {
+            const at = String(a?._rowType || "");
+            const bt = String(b?._rowType || "");
+            cmp = at.localeCompare(bt);
+        }
+        return currentListSortDirection === "desc" ? -cmp : cmp;
+    }
+
+    function applyListSortIndicators() {
+        for (const btn of listSortButtons) {
+            const sortKey = String(btn?.dataset?.sortKey || "");
+            const active = sortKey === currentListSortKey;
+            btn.classList.toggle("is-active", active);
+            btn.dataset.sortDir = active ? currentListSortDirection : "";
+            const mark = btn.querySelector(".tableSortMark");
+            if (mark) {
+                mark.textContent = active ? (currentListSortDirection === "asc" ? "▲" : "▼") : "⇅";
+            }
+        }
+    }
+
+    function setListSort(sortKey) {
+        const nextKey = String(sortKey || "").trim();
+        if (!nextKey) return;
+        if (currentListSortKey === nextKey) {
+            currentListSortDirection = currentListSortDirection === "asc" ? "desc" : "asc";
+        } else {
+            currentListSortKey = nextKey;
+            currentListSortDirection = nextKey === "mtime" ? "desc" : "asc";
+        }
+        applyListSortIndicators();
+        if (selectedCanUpload) {
+            renderTable(currentListDirs, currentListFiles);
+        }
+    }
+
+    function buildListStateText(dirs, files) {
+        const counts = {
+            registered: 0,
+            registering: 0,
+            error: 0,
+            unregistered: 0,
+        };
+        for (const file of files) {
+            const code = normalizeRegistrationStatusCode(file);
+            counts[code] = Number(counts[code] || 0) + 1;
+        }
+        return [
+            `フォルダ=${dirs.length}`,
+            `ファイル=${files.length}`,
+            `登録済=${counts.registered}`,
+            `登録中=${counts.registering}`,
+            `エラー=${counts.error}`,
+            `未登録=${counts.unregistered}`,
+        ].join(" / ");
+    }
+
     function renderTable(dirs, files) {
         currentListDirs = Array.isArray(dirs) ? dirs.slice() : [];
         currentListFiles = Array.isArray(files) ? files.slice() : [];
         fileTableBody.innerHTML = "";
 
-        const visibleDirs = currentListDirs;
+        const visibleDirs = currentListDirs.slice();
         const visibleFiles = currentListFiles.filter((item) => isSupportedFileName(item?.name || ""));
-        const hasDirs = visibleDirs.length > 0;
-        const hasFiles = visibleFiles.length > 0;
-        const totalCount = visibleDirs.length + visibleFiles.length;
-        listState.textContent = totalCount > 0 ? `${totalCount}件` : "0件";
+        const rows = [
+            ...visibleDirs.map((item) => ({ ...item, _rowType: "dir" })),
+            ...visibleFiles.map((item) => ({ ...item, _rowType: "file" })),
+        ].sort(compareListItems);
 
-        if (!hasDirs && !hasFiles) {
+        listState.textContent = buildListStateText(visibleDirs, visibleFiles);
+
+        if (!rows.length) {
             const tr = document.createElement("tr");
-            tr.innerHTML = `<td colspan="4" class="empty-cell">対応ファイルはありません。</td>`;
+            tr.innerHTML = `<td colspan="5" class="empty-cell">対応ファイルはありません。</td>`;
             fileTableBody.appendChild(tr);
             return;
         }
 
-        for (const d of visibleDirs) {
-            const tr = document.createElement("tr");
-            tr.className = "clickable-row";
-            tr.innerHTML = `
-                <td>${renderNameCell(d.name, true)}</td>
-                <td>${escapeHtml(d.mtime || "-")}</td>
-                <td>-</td>
-                <td>-</td>
-            `;
-            tr.addEventListener("click", () => loadFolder(d.path || ""));
-            fileTableBody.appendChild(tr);
-        }
+        for (const item of rows) {
+            if (String(item?._rowType || "") === "dir") {
+                const tr = document.createElement("tr");
+                tr.className = "clickable-row";
+                tr.innerHTML = `
+                    <td>${renderNameCell(item.name, true)}</td>
+                    <td>${renderRegistrationStatusCell(null, true)}</td>
+                    <td>${escapeHtml(item.mtime || "-")}</td>
+                    <td>-</td>
+                    <td>-</td>
+                `;
+                tr.addEventListener("click", () => loadFolder(item.path || ""));
+                fileTableBody.appendChild(tr);
+                continue;
+            }
 
-        for (const f of visibleFiles) {
-            const filePath = String(f?.path || "");
+            const filePath = String(item?.path || "");
             const isBusy = deleteBusyPaths.has(filePath);
             const disabled = isBusy || !selectedDeleteAvailable;
-            const disabledReason = isBusy ? "削除中です。" : (selectedDeleteReason || "Difyに通信できないため削除できません。")
+            const disabledReason = isBusy ? "削除中です。" : (selectedDeleteReason || "Difyに通信できないため削除できません。");
             const title = disabled ? disabledReason : "元ファイル・Markdown・Difyドキュメントを削除します。";
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td>${renderNameCell(f.name, false)}</td>
-                <td>${escapeHtml(f.mtime || "-")}</td>
-                <td>${escapeHtml(formatBytes(f.size_bytes))}</td>
+                <td>${renderNameCell(item.name, false)}</td>
+                <td>${renderRegistrationStatusCell(item, false)}</td>
+                <td>${escapeHtml(item.mtime || "-")}</td>
+                <td>${escapeHtml(formatBytes(item.size_bytes))}</td>
                 <td>
                     <button
                         type="button"
@@ -330,11 +499,11 @@
                     >削除</button>
                 </td>
             `;
-            const btn = tr.querySelector('.fileDeleteBtn');
+            const btn = tr.querySelector(".fileDeleteBtn");
             if (btn) {
-                btn.addEventListener('click', async (e) => {
+                btn.addEventListener("click", async (e) => {
                     e.stopPropagation();
-                    await deleteFile(f);
+                    await deleteFile(item);
                 });
             }
             fileTableBody.appendChild(tr);
@@ -375,8 +544,12 @@
     }
 
     function renderTreeLabel(item) {
-        const name = escapeHtml(item?.name || "/");
+        const rawName = String(item?.name || "/");
         const depth = Number(item?.depth || 0);
+        const displayName = depth === UPLOAD_ALLOWED_DEPTH && Object.prototype.hasOwnProperty.call(LV5_TREE_LABELS, rawName)
+            ? LV5_TREE_LABELS[rawName]
+            : rawName;
+        const name = escapeHtml(displayName);
         const count = Number(item?.file_count || 0);
         return `
             <span class="folderTreeMain">
@@ -478,6 +651,7 @@
         wrapper.dataset.path = item.path || "";
         wrapper.dataset.depth = String(item.depth || 0);
         wrapper.dataset.fileCount = String(Number(item.file_count || 0));
+        wrapper.style.setProperty("--tree-depth", String(Math.max(0, Number(item.depth || 0))));
 
         const row = document.createElement("div");
         row.className = "folderTreeRow";
@@ -580,9 +754,11 @@
         }
     }
 
-    async function loadFolder(path) {
+    async function loadFolder(path, options = {}) {
+        const forceStatus = !!options.forceStatus;
+        const silentError = !!options.silentError;
         try {
-            const data = await fetchJson(`/api/explorer/list?path=${encodeURIComponent(path || "")}`);
+            const data = await fetchFolderData(path || "", { forceStatus });
             selectedPath = data.current?.path || "";
             currentPath.textContent = formatRelativePath(data.current?.path);
             selectedDeleteAvailable = !!data.current?.delete_available;
@@ -600,7 +776,20 @@
                 currentListFiles = [];
             }
         } catch (err) {
-            setQueueHint(`フォルダ読込失敗: ${String(err?.message || err)}`, "err");
+            if (!silentError) {
+                setQueueHint(`フォルダ読込失敗: ${String(err?.message || err)}`, "err");
+            }
+        }
+    }
+
+    async function refreshVisibleListStatuses() {
+        if (!selectedCanUpload || !selectedPath || currentPanel !== "list") return;
+        if (folderStatusRefreshBusy) return;
+        folderStatusRefreshBusy = true;
+        try {
+            await loadFolder(selectedPath, { forceStatus: true, silentError: true });
+        } finally {
+            folderStatusRefreshBusy = false;
         }
     }
 
@@ -709,6 +898,7 @@
             if (!queueHint.classList.contains("err")) {
                 setQueueHint("フォルダ横断でフェアに1件ずつ処理します。", "");
             }
+            await refreshVisibleListStatuses();
         } catch (err) {
             setQueueHint(`キュー取得失敗: ${String(err?.message || err)}`, "err");
         }
@@ -723,15 +913,20 @@
 
     function splitUploadFiles(files) {
         const supported = [];
-        const blocked = [];
+        const blockedUnsupported = [];
+        const blockedOversize = [];
         for (const file of Array.from(files || [])) {
-            if (isSupportedFileName(file?.name || "")) {
-                supported.push(file);
-            } else {
-                blocked.push(file);
+            if (!isSupportedFileName(file?.name || "")) {
+                blockedUnsupported.push(file);
+                continue;
             }
+            if (Number(file?.size || 0) > MAX_UPLOAD_FILE_SIZE_BYTES) {
+                blockedOversize.push(file);
+                continue;
+            }
+            supported.push(file);
         }
-        return { supported, blocked };
+        return { supported, blockedUnsupported, blockedOversize };
     }
 
     function buildBlockedFilesMessage(blocked) {
@@ -774,8 +969,9 @@
                 `Markdown削除=${deleted.markdown_deleted ? 1 : 0}`,
                 `Dify削除=${Number(deleted.dify_deleted_count || 0)}`,
             ];
-            if (Number(deleted.queue_paused_count || 0) > 0) {
-                parts.push(`キュー除外=${Number(deleted.queue_paused_count || 0)}`);
+            const queueRemovedCount = Number(deleted.queue_removed_count || deleted.queue_paused_count || 0);
+            if (queueRemovedCount > 0) {
+                parts.push(`キュー削除=${queueRemovedCount}`);
             }
             setQueueHint(parts.join(' / '), 'ok');
             incrementLoadedTreeCounts(selectedPath, -1);
@@ -799,9 +995,12 @@
             return;
         }
 
-        const { supported, blocked } = splitUploadFiles(files);
+        const { supported, blockedUnsupported, blockedOversize } = splitUploadFiles(files);
         if (!supported.length) {
-            setQueueHint(`非対応拡張子のため追加できません。対応拡張子: ${formatAllowedExtensions()}`, "err");
+            const reasons = [];
+            if (blockedUnsupported.length) reasons.push(`非対応拡張子=${blockedUnsupported.length}`);
+            if (blockedOversize.length) reasons.push(`100MB超過=${blockedOversize.length}`);
+            setQueueHint(`追加できません。${reasons.join(" / ")} / 対応拡張子: ${formatAllowedExtensions()}`, "err");
             return;
         }
 
@@ -812,8 +1011,11 @@
         }
 
         try {
-            if (blocked.length) {
-                setQueueHint(`非対応 ${blocked.length} 件を除外してアップロードします。`, "warn");
+            const excludedParts = [];
+            if (blockedUnsupported.length) excludedParts.push(`非対応 ${blockedUnsupported.length} 件`);
+            if (blockedOversize.length) excludedParts.push(`100MB超過 ${blockedOversize.length} 件`);
+            if (excludedParts.length) {
+                setQueueHint(`${excludedParts.join(" / ")} を除外してアップロードします。`, "warn");
             } else {
                 setQueueHint(`アップロード中: ${supported.length}件`, "info");
             }
@@ -836,15 +1038,19 @@
                 `保存エラー=${errorCount}`,
             ];
             if (queueErrorCount) parts.push(`キューエラー=${queueErrorCount}`);
-            if (blocked.length) parts.push(`対象外除外=${blocked.length}`);
+            if (blockedUnsupported.length) parts.push(`対象外除外=${blockedUnsupported.length}`);
+            if (blockedOversize.length) parts.push(`容量超過除外=${blockedOversize.length}`);
             const note = parts.join(" / ");
-            setQueueHint(note, queueErrorCount || errorCount ? "warn" : (blocked.length || skippedCount ? "warn" : "ok"));
+            setQueueHint(note, queueErrorCount || errorCount ? "warn" : (blockedUnsupported.length || blockedOversize.length || skippedCount ? "warn" : "ok"));
 
             if (savedCount > 0) incrementLoadedTreeCounts(selectedPath, savedCount);
             switchPanel("queue");
             await Promise.all([loadFolder(selectedPath), loadQueue()]);
         } catch (err) {
-            const blockedMsg = blocked.length ? ` / 除外: ${buildBlockedFilesMessage(blocked)}` : "";
+            const blockedParts = [];
+            if (blockedUnsupported.length) blockedParts.push(`非対応除外: ${buildBlockedFilesMessage(blockedUnsupported)}`);
+            if (blockedOversize.length) blockedParts.push(`100MB超過除外: ${buildBlockedFilesMessage(blockedOversize)}`);
+            const blockedMsg = blockedParts.length ? ` / ${blockedParts.join(" / ")}` : "";
             setQueueHint(`アップロード失敗: ${String(err?.message || err)}${blockedMsg}`, "err");
             switchPanel("queue");
         }
@@ -887,13 +1093,20 @@
         }
     });
 
-    tabListBtn.addEventListener("click", () => {
+    tabListBtn.addEventListener("click", async () => {
         switchPanel("list");
+        await refreshVisibleListStatuses();
     });
 
     tabQueueBtn.addEventListener("click", () => {
         switchPanel("queue");
     });
+
+    for (const btn of listSortButtons) {
+        btn.addEventListener("click", () => {
+            setListSort(btn.dataset.sortKey || "");
+        });
+    }
 
     window.addEventListener("resize", syncOnDemandSidebarLayout);
 
@@ -901,6 +1114,7 @@
         try {
             syncOnDemandSidebarLayout();
             renderAllowedExtensions();
+            applyListSortIndicators();
             switchPanel("list");
             try {
                 await ensureDatasetsLoaded();

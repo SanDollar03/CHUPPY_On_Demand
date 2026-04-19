@@ -43,6 +43,7 @@ button {
     color: var(--text);
     cursor: pointer;
     font-size: 12px;
+    line-height: .95;
 }
 button:disabled {
     opacity: .55;
@@ -93,7 +94,7 @@ button:disabled {
     z-index: 101;
     width: var(--sidebar-w);
     margin: 0;
-    padding: 5px 5px 6px;
+    padding: 2px 3px 3px;
     border-top: none;
     border-left: none;
     border-radius: 0;
@@ -118,7 +119,9 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 0;
-    font-size: 12px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.02;
 }
 .folderTreeItem {
     display: block;
@@ -134,23 +137,23 @@ button:disabled {
     border-bottom: none;
 }
 .folderTreeChildren {
-    margin: 0 0 0 10px;
-    padding: 0;
+    margin: 0 0 0 7px;
+    padding: 0 0 0 5px;
     display: flex;
     flex-direction: column;
 }
 .folderTreeChildren[hidden] { display: none !important; }
 .folderTreeToggle {
-    width: 13px;
-    min-width: 13px;
-    height: 13px;
+    width: 12px;
+    min-width: 12px;
+    height: 12px;
     margin: 0;
     padding: 0;
     border: none;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
     line-height: 1;
 }
@@ -158,9 +161,10 @@ button:disabled {
     flex: 1 1 auto;
     width: 100%;
     min-width: 0;
-    min-height: 17px;
+    height: auto;
+    min-height: 0;
     margin: 0;
-    padding: 0 1px 0 0;
+    padding: 1px 0;
     border: 1px solid transparent;
     border-radius: 3px;
     background: transparent;
@@ -168,7 +172,7 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
+    gap: 3px;
     text-align: left;
 }
 .folderTreeNode:hover {
@@ -193,21 +197,21 @@ button:disabled {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 13.5px;
     font-weight: 400;
-    line-height: 1;
+    line-height: 1.02;
 }
 .folderTreeCount {
     flex: 0 0 auto;
     color: var(--bad);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 500;
     line-height: 1;
 }
 .folderTreeLv {
     flex: 0 0 auto;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 400;
     line-height: 1;
 }
@@ -386,6 +390,8 @@ button:disabled {
     color: var(--muted);
     font-size: 10px;
     line-height: 1.15;
+    text-align: right;
+    word-break: break-word;
 }
 .ondemandQueueHint {
     margin-bottom: 6px;
@@ -406,6 +412,42 @@ button:disabled {
     text-align: center;
     font-size: 11px;
     line-height: 1.2;
+}
+
+.tableSortBtn {
+    height: auto;
+    min-height: 0;
+    width: 100%;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: 1.1;
+    text-align: left;
+}
+.tableSortBtn:hover {
+    background: transparent;
+    color: var(--text);
+}
+.tableSortBtn.is-active {
+    color: #5b21b6;
+}
+.tableSortMark {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1;
+}
+.tableSortBtn.is-active .tableSortMark {
+    color: inherit;
 }
 .ondemandTableWrap {
     overflow: auto;

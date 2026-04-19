@@ -43,7 +43,7 @@
             <div id="dropZone" class="ondemandDropZone disabled">
                 <div class="ondemandDropText">
                     <div class="ondemandDropTitle">ここにファイルをドラッグ＆ドロップ</div>
-                    <div id="dropZoneSub" class="ondemandDropSub">Lv5フォルダ選択時のみ追加できます</div>
+                    <div id="dropZoneSub" class="ondemandDropSub">Lv5フォルダ選択時のみ追加できます。1ファイル100MB以下のみ対応です。</div>
                     <div id="dropZoneExts" class="ondemandDropExts">追加可能拡張子: -</div>
                 </div>
                 <div class="ondemandDropActions">
@@ -75,9 +75,10 @@
                         <table class="ondemandTable">
                             <thead>
                                 <tr>
-                                    <th>名前</th>
-                                    <th style="width: 148px;">更新日時</th>
-                                    <th style="width: 92px;">サイズ</th>
+                                    <th><button type="button" class="tableSortBtn" data-sort-key="name" data-sortable="1"><span>名前</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th style="width: 98px;"><button type="button" class="tableSortBtn" data-sort-key="status" data-sortable="1"><span>状態</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th style="width: 156px;"><button type="button" class="tableSortBtn is-active" data-sort-key="mtime" data-sortable="1"><span>更新日時</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th style="width: 96px;"><button type="button" class="tableSortBtn" data-sort-key="size" data-sortable="1"><span>サイズ</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
                                     <th style="width: 86px;">操作</th>
                                 </tr>
                             </thead>
@@ -123,7 +124,8 @@
             "rootPath": explorer_root,
             "maxDepth": explorer_max_depth,
             "uploadAllowedDepth": upload_allowed_depth,
-            "allowedExtensions": allowed_extensions
+            "allowedExtensions": allowed_extensions,
+            "maxUploadFileSizeBytes": max_upload_file_size_bytes
         } | tojson }}
     </script>
     <script src="{{ url_for('static', filename='ondemand.js') }}"></script>

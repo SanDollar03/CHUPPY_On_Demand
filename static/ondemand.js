@@ -51,7 +51,6 @@
     const folderTree = document.getElementById("folderTree");
     const currentPath = document.getElementById("currentPath");
     const currentMeta = document.getElementById("currentMeta");
-    const knowledgeLabel = document.getElementById("knowledgeLabel");
 
     const dropZone = document.getElementById("dropZone");
     const dropZoneSub = document.getElementById("dropZoneSub");
@@ -81,8 +80,6 @@
     let selectedPath = "";
     let selectedDepth = 0;
     let selectedCanUpload = false;
-    let selectedDeleteAvailable = false;
-    let selectedDeleteReason = "";
     let queuePollTimer = null;
     let currentPanel = "list";
     let currentListDirs = [];
@@ -91,12 +88,6 @@
     let currentListSortDirection = "desc";
     const deleteBusyPaths = new Set();
     let folderStatusRefreshBusy = false;
-
-    const datasetState = {
-        loaded: false,
-        items: [],
-        error: "",
-    };
 
     function syncOnDemandSidebarLayout() {
         const topbar = document.querySelector(".topbar");
@@ -153,12 +144,6 @@
         return `Chu_${filtered.join("_")}`;
     }
 
-    function setKnowledgeLabel(text, kind = "") {
-        if (!knowledgeLabel) return;
-        knowledgeLabel.textContent = text || "-";
-        knowledgeLabel.className = `ondemandKnowledgeLabel${kind ? ` ${kind}` : ""}`;
-    }
-
     async function fetchJson(url, options = {}) {
         const res = await fetch(url, {
             cache: "no-store",
@@ -200,41 +185,11 @@
     }
 
     async function ensureDatasetsLoaded() {
-        if (datasetState.loaded) return datasetState.items;
-        const data = await fetchJson("/api/datasets");
-        datasetState.loaded = true;
-        datasetState.items = Array.isArray(data.items) ? data.items : [];
-        datasetState.error = "";
-        return datasetState.items;
+        return [];
     }
 
-    async function updateKnowledgeLabel(relPath, canUpload) {
-        if (!canUpload) {
-            setKnowledgeLabel(`Lv${UPLOAD_ALLOWED_DEPTH}フォルダを選択してください`, "");
-            return;
-        }
-
-        const knowledgeName = buildKnowledgeNameFromPath(relPath);
-        if (!knowledgeName) {
-            setKnowledgeLabel("ナレッジ名を判定できません。", "err");
-            return;
-        }
-
-        try {
-            const items = await ensureDatasetsLoaded();
-            const found = items.find((item) => String(item?.name || "") === knowledgeName);
-            if (found) {
-                setKnowledgeLabel(found.name, "ok");
-            } else {
-                setKnowledgeLabel("ナレッジが存在しません。管理者に問い合わせてください", "err");
-            }
-        } catch (err) {
-            datasetState.loaded = false;
-            datasetState.items = [];
-            datasetState.error = String(err?.message || err || "");
-            setKnowledgeLabel("ナレッジ一覧の取得に失敗しました。", "err");
-            setQueueHint(`ナレッジ一覧取得失敗: ${datasetState.error}`, "err");
-        }
+    async function updateKnowledgeLabel(_relPath, _canUpload) {
+        return;
     }
 
     function setUploadState(canUpload, depth) {
@@ -320,10 +275,10 @@
         const code = normalizeRegistrationStatusCode(item);
         const label = String(item?.registration_status_label || "").trim();
         if (label) return label;
-        if (code === "registered") return "登録済";
-        if (code === "registering") return "登録中";
+        if (code === "registered") return "変換済";
+        if (code === "registering") return "変換中";
         if (code === "error") return "エラー";
-        return "未登録";
+        return "未変換";
     }
 
     function registrationStatusClass(item) {
@@ -439,10 +394,10 @@
         return [
             `フォルダ=${dirs.length}`,
             `ファイル=${files.length}`,
-            `登録済=${counts.registered}`,
-            `登録中=${counts.registering}`,
+            `変換済=${counts.registered}`,
+            `変換中=${counts.registering}`,
             `エラー=${counts.error}`,
-            `未登録=${counts.unregistered}`,
+            `未変換=${counts.unregistered}`,
         ].join(" / ");
     }
 
@@ -485,9 +440,9 @@
 
             const filePath = String(item?.path || "");
             const isBusy = deleteBusyPaths.has(filePath);
-            const disabled = isBusy || !selectedDeleteAvailable;
-            const disabledReason = isBusy ? "削除中です。" : (selectedDeleteReason || "Difyに通信できないため削除できません。");
-            const title = disabled ? disabledReason : "元ファイル・Markdown・Difyドキュメントを削除します。";
+            const disabled = isBusy;
+            const disabledReason = isBusy ? "削除中です。" : "";
+            const title = disabled ? disabledReason : "元ファイルとMarkdownを削除します。";
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${renderNameCell(item.name, false)}</td>
@@ -766,11 +721,8 @@
             const data = await fetchFolderData(path || "", { forceStatus });
             selectedPath = data.current?.path || "";
             currentPath.textContent = formatRelativePath(data.current?.path);
-            selectedDeleteAvailable = !!data.current?.delete_available;
-            selectedDeleteReason = String(data.current?.delete_reason || "");
-            currentMeta.textContent = `現在階層: Lv${data.current?.depth ?? 0} / 追加: ${data.current?.can_upload ? "可" : "不可"} / 削除: ${selectedDeleteAvailable ? "可" : "不可"}`;
+            currentMeta.textContent = `現在階層: Lv${data.current?.depth ?? 0} / 追加: ${data.current?.can_upload ? "可" : "不可"}`;
             setUploadState(!!data.current?.can_upload, Number(data.current?.depth || 0));
-            await updateKnowledgeLabel(data.current?.path || "", !!data.current?.can_upload);
 
             const shouldShowList = !!data.current?.can_upload;
             setListVisible(shouldShowList);
@@ -832,9 +784,6 @@
         const parts = [];
         if (item?.stage) parts.push(String(item.stage));
         if (item?.message) parts.push(String(item.message));
-        if (Number(item?.total_segments || 0) > 0) {
-            parts.push(`segments=${Number(item.completed_segments || 0)}/${Number(item.total_segments || 0)}`);
-        }
         if (Number(item?.attempt_no || 0) > 0) {
             parts.push(`試行=${Number(item.attempt_no || 0)}`);
         }
@@ -866,7 +815,7 @@
     }
 
     async function deleteQueueTask(taskId, fileName) {
-        if (!window.confirm(`「${fileName}」をキューから削除します。\n元ファイル・Markdown・Difyナレッジも削除します。`)) return;
+        if (!window.confirm(`「${fileName}」をキューから削除します。\n元ファイルとMarkdownも削除します。`)) return;
         try {
             setQueueHint(`削除中: ${fileName}`, "info");
             await fetchJson(`/api/ondemand/queue/${encodeURIComponent(taskId)}/delete`, { method: "POST" });
@@ -874,20 +823,20 @@
             await Promise.all([loadFolder(selectedPath, { silentError: true }), loadQueue()]);
         } catch (err) {
             setQueueHint(`削除失敗: ${String(err?.message || err)}`, "err");
-            await loadQueue().catch(() => {});
+            await loadQueue().catch(() => { });
         }
     }
 
     async function retryQueueTask(taskId, fileName) {
-        if (!window.confirm(`「${fileName}」を再試行します。\nMarkdown・Difyナレッジを削除してキューの最後尾に追加します。`)) return;
+        if (!window.confirm(`「${fileName}」を再試行します。\nMarkdownを削除してキューの最後尾に追加します。`)) return;
         try {
             setQueueHint(`再試行準備中: ${fileName}`, "info");
             await fetchJson(`/api/ondemand/queue/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
             setQueueHint(`再試行をキューに追加しました: ${fileName}`, "ok");
-            await loadQueue().catch(() => {});
+            await loadQueue().catch(() => { });
         } catch (err) {
             setQueueHint(`再試行失敗: ${String(err?.message || err)}`, "err");
-            await loadQueue().catch(() => {});
+            await loadQueue().catch(() => { });
         }
     }
 
@@ -917,12 +866,12 @@
                 <td><span class="queueStatus ${escapeHtml(statusClass(item))}">${escapeHtml(statusLabel(item))}</span></td>
                 <td class="queueCellWrap">${escapeHtml(item.folder_display || "-")}</td>
                 <td class="queueCellWrap">${renderNameCell(item.source_display_name || "-", false)}</td>
-                <td class="queueCellWrap">${escapeHtml(item.dataset_name || "-")}</td>
+                <td class="queueCellWrap">${escapeHtml(item.markdown_name || "-")}</td>
                 <td class="queueCellWrap queueProgressCell">${escapeHtml(buildProgressText(item))}</td>
                 <td>${escapeHtml(item.updated_at || "-")}</td>
                 <td class="queueActionCell">${isError ? `
-                    <button type="button" class="queueRetryBtn" data-task-id="${escapeHtml(taskId)}" title="Markdown・Difyを削除してキュー最後尾に再追加">再試行</button>
-                    <button type="button" class="queueDeleteBtn" data-task-id="${escapeHtml(taskId)}" title="元ファイル・Markdown・Difyを全削除">削除</button>
+                    <button type="button" class="queueRetryBtn" data-task-id="${escapeHtml(taskId)}" title="Markdownを削除してキュー最後尾に再追加">再試行</button>
+                    <button type="button" class="queueDeleteBtn" data-task-id="${escapeHtml(taskId)}" title="元ファイルとMarkdownを削除">削除</button>
                 ` : "-"}</td>
             `;
             if (isError && taskId) {
@@ -951,7 +900,7 @@
     function startQueuePolling() {
         if (queuePollTimer) clearInterval(queuePollTimer);
         queuePollTimer = setInterval(() => {
-            loadQueue().catch(() => {});
+            loadQueue().catch(() => { });
         }, 2000);
     }
 
@@ -987,12 +936,8 @@
             setQueueHint("削除対象ファイルを判定できません。", "err");
             return;
         }
-        if (!selectedDeleteAvailable) {
-            setQueueHint(selectedDeleteReason || "Difyに通信できないため削除できません。", "err");
-            return;
-        }
         if (!window.confirm(`「${fileName}」を削除します。
-対応するMarkdownとDifyナレッジも削除します。`)) {
+対応するMarkdownも削除します。`)) {
             return;
         }
 
@@ -1011,7 +956,6 @@
             const parts = [
                 `ファイル削除=1`,
                 `Markdown削除=${deleted.markdown_deleted ? 1 : 0}`,
-                `Dify削除=${Number(deleted.dify_deleted_count || 0)}`,
             ];
             const queueRemovedCount = Number(deleted.queue_removed_count || deleted.queue_paused_count || 0);
             if (queueRemovedCount > 0) {
@@ -1022,7 +966,7 @@
             await Promise.all([loadFolder(selectedPath), loadQueue()]);
         } catch (err) {
             setQueueHint(`削除失敗: ${String(err?.message || err)}`, 'err');
-            await Promise.all([loadFolder(selectedPath), loadQueue()]).catch(() => {});
+            await Promise.all([loadFolder(selectedPath), loadQueue()]).catch(() => { });
         } finally {
             deleteBusyPaths.delete(filePath);
             if (selectedCanUpload) {
@@ -1160,11 +1104,6 @@
             renderAllowedExtensions();
             applyListSortIndicators();
             switchPanel("list");
-            try {
-                await ensureDatasetsLoaded();
-            } catch (err) {
-                setQueueHint(`ナレッジ一覧先読み失敗: ${String(err?.message || err)}`, "warn");
-            }
 
             await loadTreeRoot();
             await Promise.all([loadFolder(""), loadQueue()]);

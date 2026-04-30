@@ -18,8 +18,15 @@
     --ondemand-topbar-h: 44px;
 }
 
-* { box-sizing: border-box; }
-html, body { height: 100%; }
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+}
+
 body {
     margin: 0;
     background: var(--bg);
@@ -28,12 +35,14 @@ body {
     line-height: 1.35;
     font-family: "Noto Sans JP", system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
 }
+
 button,
 input,
 select,
 textarea {
     font-family: inherit;
 }
+
 button {
     height: 30px;
     padding: 0 11px;
@@ -45,22 +54,29 @@ button {
     font-size: 12px;
     line-height: .95;
 }
+
 button:disabled {
     opacity: .55;
     cursor: not-allowed;
 }
-.hidden { display: none !important; }
+
+.hidden {
+    display: none !important;
+}
+
 .card {
     border: 1px solid var(--line);
     background: var(--panel);
     box-shadow: var(--shadow-1);
 }
+
 .miniTitle {
     margin-bottom: 2px;
     color: var(--muted);
     font-size: 11px;
     line-height: 1.15;
 }
+
 .topbar {
     position: fixed;
     top: 0;
@@ -76,16 +92,19 @@ button:disabled {
     display: flex;
     align-items: center;
 }
+
 .topbar-title {
     font-size: 16px;
     font-weight: 700;
     letter-spacing: .02em;
     line-height: 1.15;
 }
+
 .ondemandGrid {
     min-height: 100vh;
     padding-top: var(--ondemand-topbar-h);
 }
+
 .ondemandSidebarCard {
     position: fixed;
     top: 0;
@@ -100,6 +119,7 @@ button:disabled {
     border-radius: 0;
     overflow: auto;
 }
+
 .ondemandMainCard {
     min-height: calc(100vh - var(--ondemand-topbar-h));
     margin-left: var(--sidebar-w);
@@ -109,12 +129,14 @@ button:disabled {
     border-bottom: none;
     border-radius: 0;
 }
+
 .ondemandSectionHead h2 {
     margin: 0 0 2px;
     font-size: 12px;
     font-weight: 400;
     line-height: 1.1;
 }
+
 .folderTreeMini {
     display: flex;
     flex-direction: column;
@@ -123,11 +145,13 @@ button:disabled {
     font-size: 13px;
     line-height: 1.02;
 }
+
 .folderTreeItem {
     display: block;
     margin: 0;
     padding: 0;
 }
+
 .folderTreeRow {
     display: flex;
     align-items: center;
@@ -136,13 +160,18 @@ button:disabled {
     padding: 0;
     border-bottom: none;
 }
+
 .folderTreeChildren {
     margin: 0 0 0 7px;
     padding: 0 0 0 5px;
     display: flex;
     flex-direction: column;
 }
-.folderTreeChildren[hidden] { display: none !important; }
+
+.folderTreeChildren[hidden] {
+    display: none !important;
+}
+
 .folderTreeToggle {
     width: 12px;
     min-width: 12px;
@@ -157,6 +186,7 @@ button:disabled {
     font-weight: 500;
     line-height: 1;
 }
+
 .folderTreeNode {
     flex: 1 1 auto;
     width: 100%;
@@ -175,16 +205,20 @@ button:disabled {
     gap: 3px;
     text-align: left;
 }
+
 .folderTreeNode:hover {
     background: rgba(124, 58, 237, .05);
 }
-.folderTreeItem.selected > .folderTreeRow > .folderTreeNode {
+
+.folderTreeItem.selected>.folderTreeRow>.folderTreeNode {
     border-color: var(--accent-line);
     background: rgba(124, 58, 237, .08);
 }
-.folderTreeItem[data-depth="0"] > .folderTreeRow > .folderTreeNode {
+
+.folderTreeItem[data-depth="0"]>.folderTreeRow>.folderTreeNode {
     font-weight: 500;
 }
+
 .folderTreeMain {
     min-width: 0;
     display: inline-flex;
@@ -192,6 +226,7 @@ button:disabled {
     gap: 2px;
     overflow: hidden;
 }
+
 .folderTreeName {
     min-width: 0;
     overflow: hidden;
@@ -201,6 +236,7 @@ button:disabled {
     font-weight: 400;
     line-height: 1.02;
 }
+
 .folderTreeCount {
     flex: 0 0 auto;
     color: var(--bad);
@@ -208,6 +244,7 @@ button:disabled {
     font-weight: 500;
     line-height: 1;
 }
+
 .folderTreeLv {
     flex: 0 0 auto;
     color: var(--muted);
@@ -215,46 +252,55 @@ button:disabled {
     font-weight: 400;
     line-height: 1;
 }
+
 .ondemandTopBar {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
 }
+
 .ondemandCurrentWrap {
     min-width: 0;
     flex: 1 1 auto;
 }
+
 .ondemandCurrentCompact {
     display: flex;
     flex-direction: column;
     gap: 3px;
 }
+
 .ondemandInfoLine {
     display: grid;
     grid-template-columns: 82px minmax(0, 1fr);
     align-items: start;
     gap: 6px;
 }
+
 .ondemandInfoLabel {
     color: var(--muted);
     font-size: 10px;
     line-height: 1.15;
 }
+
 .ondemandInfoValue {
     min-width: 0;
     font-size: 11px;
     line-height: 1.2;
 }
+
 .ondemandCurrentPath {
     font-size: 12px;
     font-weight: 600;
     word-break: break-all;
 }
+
 .ondemandCurrentMeta {
     margin-top: 0;
     color: var(--muted);
 }
+
 .ondemandKnowledgeLabel {
     display: inline-flex;
     align-items: center;
@@ -268,25 +314,30 @@ button:disabled {
     line-height: 1.2;
     word-break: break-word;
 }
+
 .ondemandKnowledgeLabel.ok {
     border-color: rgba(22, 163, 74, .28);
     background: rgba(22, 163, 74, .08);
     color: #166534;
 }
+
 .ondemandKnowledgeLabel.err {
     border-color: rgba(185, 28, 28, .22);
     background: rgba(185, 28, 28, .06);
     color: #991b1b;
 }
+
 .ondemandTopActions {
     flex: 0 0 auto;
 }
+
 .ondemandTopActions button {
     height: 27px;
     padding: 0 10px;
     border-radius: 7px;
     font-size: 11px;
 }
+
 .ondemandDropZone {
     margin-top: 7px;
     padding: 7px 9px;
@@ -298,23 +349,28 @@ button:disabled {
     justify-content: space-between;
     gap: 8px;
 }
+
 .ondemandDropZone.disabled {
     opacity: .55;
     border-color: rgba(0, 0, 0, .14);
     background: rgba(0, 0, 0, .03);
 }
+
 .ondemandDropZone.dragover {
     background: rgba(124, 58, 237, .10);
 }
+
 .ondemandDropText {
     min-width: 0;
     flex: 1 1 auto;
 }
+
 .ondemandDropTitle {
     font-size: 12px;
     font-weight: 700;
     line-height: 1.15;
 }
+
 .ondemandDropSub,
 .ondemandDropExts {
     margin: 2px 0 0;
@@ -323,18 +379,22 @@ button:disabled {
     line-height: 1.15;
     word-break: break-word;
 }
+
 .ondemandDropExts {
     font-family: var(--mono);
 }
+
 .ondemandDropActions {
     flex: 0 0 auto;
 }
+
 .ondemandDropActions button {
     height: 27px;
     padding: 0 10px;
     border-radius: 7px;
     font-size: 11px;
 }
+
 .ondemandPanelSection {
     margin-top: 9px;
     padding: 7px;
@@ -342,6 +402,7 @@ button:disabled {
     border-radius: 10px;
     background: var(--surface);
 }
+
 .ondemandPanelTabs {
     display: inline-flex;
     align-items: center;
@@ -349,6 +410,7 @@ button:disabled {
     margin-bottom: 7px;
     flex-wrap: wrap;
 }
+
 .ondemandTabBtn {
     height: 27px;
     padding: 0 10px;
@@ -358,11 +420,13 @@ button:disabled {
     gap: 5px;
     font-size: 11px;
 }
+
 .ondemandTabBtn.is-active {
     border-color: var(--accent-line);
     background: rgba(124, 58, 237, .09);
     color: #5b21b6;
 }
+
 .ondemandTabCount {
     min-width: 18px;
     height: 18px;
@@ -376,9 +440,11 @@ button:disabled {
     font-size: 10px;
     line-height: 1;
 }
+
 .ondemandPanel {
     min-width: 0;
 }
+
 .ondemandListHead {
     display: flex;
     align-items: center;
@@ -386,6 +452,7 @@ button:disabled {
     gap: 10px;
     margin-bottom: 5px;
 }
+
 .ondemandListState {
     color: var(--muted);
     font-size: 10px;
@@ -393,16 +460,30 @@ button:disabled {
     text-align: right;
     word-break: break-word;
 }
+
 .ondemandQueueHint {
     margin-bottom: 6px;
     color: var(--muted);
     font-size: 10px;
     line-height: 1.15;
 }
-.ondemandQueueHint.ok { color: var(--ok); }
-.ondemandQueueHint.warn { color: var(--warn); }
-.ondemandQueueHint.err { color: var(--bad); }
-.ondemandQueueHint.info { color: #5b21b6; }
+
+.ondemandQueueHint.ok {
+    color: var(--ok);
+}
+
+.ondemandQueueHint.warn {
+    color: var(--warn);
+}
+
+.ondemandQueueHint.err {
+    color: var(--bad);
+}
+
+.ondemandQueueHint.info {
+    color: #5b21b6;
+}
+
 .ondemandEmptyBox {
     padding: 10px 8px;
     border: 1px dashed var(--line);
@@ -433,33 +514,40 @@ button:disabled {
     line-height: 1.1;
     text-align: left;
 }
+
 .tableSortBtn:hover {
     background: transparent;
     color: var(--text);
 }
+
 .tableSortBtn.is-active {
     color: #5b21b6;
 }
+
 .tableSortMark {
     flex: 0 0 auto;
     color: var(--muted);
     font-size: 10px;
     line-height: 1;
 }
+
 .tableSortBtn.is-active .tableSortMark {
     color: inherit;
 }
+
 .ondemandTableWrap {
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
 }
+
 .ondemandTable {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
 }
+
 .ondemandTable th,
 .ondemandTable td {
     padding: 4px 6px;
@@ -469,29 +557,36 @@ button:disabled {
     line-height: 1.15;
     vertical-align: middle;
 }
+
 .ondemandTable th {
     background: rgba(0, 0, 0, .02);
     color: var(--muted);
     font-weight: 700;
 }
+
 .ondemandQueueTable th,
 .ondemandQueueTable td {
     padding-top: 3px;
     padding-bottom: 3px;
 }
+
 .ondemandTable tr:last-child td {
     border-bottom: none;
 }
+
 .clickable-row {
     cursor: pointer;
 }
+
 .clickable-row:hover {
     background: rgba(124, 58, 237, .04);
 }
+
 .empty-cell,
 .queueCellWrap {
     word-break: break-word;
 }
+
 .fileNameCell {
     display: inline-flex;
     align-items: center;
@@ -499,6 +594,7 @@ button:disabled {
     min-width: 0;
     max-width: 100%;
 }
+
 .fileTypeIcon {
     flex: 0 0 auto;
     width: 16px;
@@ -506,12 +602,14 @@ button:disabled {
     font-size: 12px;
     line-height: 1;
 }
+
 .fileNameText {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
 .fileDeleteBtn {
     height: 22px;
     min-width: 52px;
@@ -522,14 +620,17 @@ button:disabled {
     color: var(--bad);
     font-size: 10.5px;
 }
+
 .fileDeleteBtn:hover:enabled {
     background: rgba(185, 28, 28, .08);
 }
+
 .fileDeleteBtn:disabled {
     color: var(--muted);
     border-color: var(--line);
     background: rgba(0, 0, 0, .03);
 }
+
 .queueStatus {
     display: inline-flex;
     align-items: center;
@@ -541,40 +642,49 @@ button:disabled {
     background: #fff;
     line-height: 1.15;
 }
+
 .queueStatus.ok {
     color: var(--ok);
     border-color: rgba(22, 163, 74, .22);
     background: rgba(22, 163, 74, .08);
 }
+
 .queueStatus.err {
     color: var(--bad);
     border-color: rgba(185, 28, 28, .22);
     background: rgba(185, 28, 28, .06);
 }
+
 .queueStatus.warn {
     color: var(--warn);
     border-color: rgba(180, 83, 9, .24);
     background: rgba(180, 83, 9, .08);
 }
+
 .queueStatus.info {
     color: #5b21b6;
     border-color: rgba(124, 58, 237, .26);
     background: rgba(124, 58, 237, .08);
 }
+
 .queueStatus.skip {
     color: #4b5563;
     border-color: rgba(107, 114, 128, .22);
     background: rgba(107, 114, 128, .08);
 }
+
 .queueProgressCell {
     font-family: var(--mono);
 }
+
 .ondemandTable td:last-child {
     white-space: nowrap;
 }
+
 .queueActionCell {
     white-space: nowrap;
 }
+
 .queueRetryBtn,
 .queueDeleteBtn {
     height: 22px;
@@ -583,20 +693,24 @@ button:disabled {
     font-size: 10.5px;
     cursor: pointer;
 }
+
 .queueRetryBtn {
     border-color: rgba(37, 99, 235, .22);
     background: rgba(37, 99, 235, .06);
     color: #1d4ed8;
     margin-right: 4px;
 }
+
 .queueRetryBtn:hover {
     background: rgba(37, 99, 235, .12);
 }
+
 .queueDeleteBtn {
     border-color: rgba(185, 28, 28, .20);
     background: rgba(185, 28, 28, .04);
     color: var(--bad);
 }
+
 .queueDeleteBtn:hover {
     background: rgba(185, 28, 28, .08);
 }
@@ -606,6 +720,7 @@ button:disabled {
         left: 0;
         padding: 8px 10px;
     }
+
     .ondemandSidebarCard {
         position: static;
         width: 100%;
@@ -613,6 +728,7 @@ button:disabled {
         z-index: auto;
         border-right: 1px solid var(--line);
     }
+
     .ondemandMainCard {
         margin-left: 0;
         min-height: auto;
@@ -623,18 +739,22 @@ button:disabled {
     .topbar-title {
         font-size: 15px;
     }
+
     .ondemandTopBar {
         flex-direction: column;
         align-items: stretch;
     }
+
     .ondemandDropZone {
         flex-direction: column;
         align-items: stretch;
     }
+
     .ondemandInfoLine {
         grid-template-columns: 1fr;
         gap: 2px;
     }
+
     .ondemandMainCard {
         padding: 8px;
     }

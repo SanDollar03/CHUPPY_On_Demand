@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{{ title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body class="ondemand-page">
     <header class="topbar">
         <div class="topbar-title">CHUPPY RAG CONVERTER</div>
@@ -27,10 +29,6 @@
                         <div class="ondemandInfoLine">
                             <div class="ondemandInfoLabel">状態</div>
                             <div id="currentMeta" class="ondemandInfoValue ondemandCurrentMeta">Lv5フォルダを選択してください</div>
-                        </div>
-                        <div class="ondemandInfoLine">
-                            <div class="ondemandInfoLabel">Difyナレッジ</div>
-                            <div id="knowledgeLabel" class="ondemandKnowledgeLabel">Lv5フォルダを選択してください</div>
                         </div>
                     </div>
                 </div>
@@ -75,10 +73,18 @@
                         <table class="ondemandTable">
                             <thead>
                                 <tr>
-                                    <th><button type="button" class="tableSortBtn" data-sort-key="name" data-sortable="1"><span>名前</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
-                                    <th style="width: 98px;"><button type="button" class="tableSortBtn" data-sort-key="status" data-sortable="1"><span>状態</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
-                                    <th style="width: 156px;"><button type="button" class="tableSortBtn is-active" data-sort-key="mtime" data-sortable="1"><span>更新日時</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
-                                    <th style="width: 96px;"><button type="button" class="tableSortBtn" data-sort-key="size" data-sortable="1"><span>サイズ</span><span class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th><button type="button" class="tableSortBtn" data-sort-key="name"
+                                            data-sortable="1"><span>名前</span><span class="tableSortMark"
+                                                aria-hidden="true"></span></button></th>
+                                    <th style="width: 98px;"><button type="button" class="tableSortBtn"
+                                            data-sort-key="status" data-sortable="1"><span>状態</span><span
+                                                class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th style="width: 156px;"><button type="button" class="tableSortBtn is-active"
+                                            data-sort-key="mtime" data-sortable="1"><span>更新日時</span><span
+                                                class="tableSortMark" aria-hidden="true"></span></button></th>
+                                    <th style="width: 96px;"><button type="button" class="tableSortBtn"
+                                            data-sort-key="size" data-sortable="1"><span>サイズ</span><span
+                                                class="tableSortMark" aria-hidden="true"></span></button></th>
                                     <th style="width: 86px;">操作</th>
                                 </tr>
                             </thead>
@@ -106,7 +112,7 @@
                                     <th style="width: 88px;">状態</th>
                                     <th style="width: 20%;">フォルダ</th>
                                     <th style="width: 18%;">ファイル</th>
-                                    <th style="width: 18%;">ナレッジ</th>
+                                    <th style="width: 18%;">Markdown</th>
                                     <th>進捗</th>
                                     <th style="width: 132px;">更新</th>
                                     <th style="width: 112px;">操作</th>
@@ -131,4 +137,5 @@
     </script>
     <script src="{{ url_for('static', filename='ondemand.js') }}"></script>
 </body>
+
 </html>

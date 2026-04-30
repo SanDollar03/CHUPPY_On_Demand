@@ -844,8 +844,6 @@ def build_registration_status_payload(
 def resolve_explorer_file_registration_status(
     folder_rel_path: str,
     file_item: Dict[str, Any],
-    dataset: Optional[Dict[str, Any]],
-    dataset_name_keys: set,
     latest_task: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     file_name = str((file_item or {}).get("name") or "")
@@ -858,34 +856,44 @@ def resolve_explorer_file_registration_status(
 
     if queue_status in {"queued", "running"}:
         if queue_status == "running":
-            detail = latest_message or "現在登録処理を実行しています。"
+            detail = latest_message or "現在Markdown変換処理を実行しています。"
         else:
             detail = latest_message or "アップロード待ちキューで順番待ちです。"
         return build_registration_status_payload(
             code="registering",
-            label="登録中",
+            label="変換中",
             detail=detail,
             queue_status=queue_status,
             queue_stage=queue_stage,
             queue_order=queue_order,
         )
 
-    markdown_name = ""
+    markdown_abs_path = ""
     try:
-        _, _, markdown_name = build_ondemand_markdown_path(folder_rel_path, original_name)
+        # タイムスタンププレフィックス付きファイル名に対応した存在チェック
+        base_md_abs_path, _, base_md_name = build_ondemand_markdown_path(folder_rel_path, original_name)
+        md_dir = os.path.dirname(base_md_abs_path)
+        pattern = f"*_{base_md_name}"
+        
+        import glob
+        existing_files = glob.glob(os.path.join(md_dir, pattern))
+        
+        if existing_files:
+            # 最新のファイルを選択（タイムスタンプ順）
+            markdown_abs_path = sorted(existing_files)[-1]
+        else:
+            markdown_abs_path = base_md_abs_path
     except Exception:
-        markdown_name = ""
+        markdown_abs_path = ""
 
-    doc_exists = False
-    if dataset and markdown_name:
-        doc_exists = normalize_name_key(markdown_name) in set(dataset_name_keys or set())
-    if doc_exists:
-        detail = "ナレッジに同名Markdownが存在しています。"
+    md_exists = bool(markdown_abs_path) and os.path.exists(markdown_abs_path)
+    if md_exists:
+        detail = "Markdownへ変換済みです。"
         if queue_status in {"completed", "skipped"} and latest_message:
             detail = latest_message
         return build_registration_status_payload(
             code="registered",
-            label="登録済",
+            label="変換済",
             detail=detail,
             queue_status=queue_status,
             queue_stage=queue_stage,
@@ -896,17 +904,7 @@ def resolve_explorer_file_registration_status(
         return build_registration_status_payload(
             code="error",
             label="エラー",
-            detail=latest_error or latest_message or "ナレッジ登録時にエラーが発生しました。",
-            queue_status=queue_status,
-            queue_stage=queue_stage,
-            queue_order=queue_order,
-        )
-
-    if not dataset:
-        return build_registration_status_payload(
-            code="unregistered",
-            label="未登録",
-            detail="対応するナレッジが存在しません。",
+            detail=latest_error or latest_message or "Markdown変換時にエラーが発生しました。",
             queue_status=queue_status,
             queue_stage=queue_stage,
             queue_order=queue_order,
@@ -914,8 +912,8 @@ def resolve_explorer_file_registration_status(
 
     return build_registration_status_payload(
         code="unregistered",
-        label="未登録",
-        detail="ナレッジに未登録です。",
+        label="未変換",
+        detail="Markdown未変換です。",
         queue_status=queue_status,
         queue_stage=queue_stage,
         queue_order=queue_order,
@@ -932,16 +930,6 @@ def enrich_explorer_files_with_registration_status(
         return []
 
     folder_rel = str(folder_rel_path or "").strip().replace("\\", "/").strip("/")
-    dataset_name = build_ondemand_dataset_name(folder_rel)
-    dataset = find_dataset_by_name(dataset_name) if dataset_name else None
-    dataset_id = str((dataset or {}).get("id") or "")
-
-    dataset_name_keys: set = set()
-    if dataset_id:
-        try:
-            dataset_name_keys = get_dataset_document_name_keys_cached(dataset_id, force=force)
-        except Exception:
-            dataset_name_keys = get_cached_dataset_document_name_keys_any(dataset_id)
 
     source_rel_paths = [str((it or {}).get("path") or "") for it in (files or []) if (it or {}).get("path")]
     latest_task_map: Dict[str, Dict[str, Any]] = {}
@@ -956,12 +944,9 @@ def enrich_explorer_files_with_registration_status(
         status_payload = resolve_explorer_file_registration_status(
             folder_rel_path=folder_rel,
             file_item=item,
-            dataset=dataset,
-            dataset_name_keys=dataset_name_keys,
             latest_task=latest_task,
         )
         item.update(status_payload)
-        item["dataset_name"] = dataset_name
         out.append(item)
     return out
 
@@ -1662,34 +1647,7 @@ def invalidate_dataset_document_cache(dataset_id: str) -> None:
 
 
 def get_dify_delete_availability(force: bool = False) -> Tuple[bool, str]:
-    if not DATASET_API_BASE or not DATASET_API_KEY:
-        return False, "ナレッジAPI設定が未完了のため削除できません。"
-
-    with _DIFY_DELETE_HEALTH_LOCK:
-        cache_ts = float(_DIFY_DELETE_HEALTH_CACHE.get("ts") or 0.0)
-        fresh = (time.time() - cache_ts) <= DIFY_DELETE_HEALTH_CACHE_TTL_SEC
-        if fresh and not force:
-            return bool(_DIFY_DELETE_HEALTH_CACHE.get("ok")), str(_DIFY_DELETE_HEALTH_CACHE.get("reason") or "")
-
-    try:
-        dify_list_datasets(
-            api_base=DATASET_API_BASE,
-            api_key=DATASET_API_KEY,
-            prefix="",
-            limit=1,
-        )
-        ok = True
-        reason = ""
-    except Exception as e:
-        ok = False
-        reason = f"Difyに通信できないため削除できません。{safe_err(str(e))}"
-
-    with _DIFY_DELETE_HEALTH_LOCK:
-        _DIFY_DELETE_HEALTH_CACHE["ts"] = time.time()
-        _DIFY_DELETE_HEALTH_CACHE["ok"] = ok
-        _DIFY_DELETE_HEALTH_CACHE["reason"] = reason
-
-    return ok, reason
+    return True, ""
 
 
 def dataset_document_exists_by_name(dataset_id: str, doc_name: str, force: bool = False) -> bool:
@@ -1814,53 +1772,39 @@ def delete_ondemand_artifacts(
     markdown_abs_path = ""
     markdown_rel_path = ""
     markdown_name = ""
+    markdown_deleted_files = []
     try:
-        markdown_abs_path, markdown_rel_path, markdown_name = build_ondemand_markdown_path(folder_rel, original_name)
+        # タイムスタンププレフィックス付きファイル名に対応: *_元ファイル名.md パターンで検索
+        base_md_abs_path, base_md_rel_path, base_md_name = build_ondemand_markdown_path(folder_rel, original_name)
+        md_dir = os.path.dirname(base_md_abs_path)
+        pattern = f"*_{base_md_name}"
+        
+        import glob
+        existing_files = glob.glob(os.path.join(md_dir, pattern))
+        
+        for md_file in existing_files:
+            try:
+                if os.path.exists(md_file):
+                    os.remove(md_file)
+                    markdown_deleted_files.append(os.path.basename(md_file))
+            except Exception as e:
+                fail(f"Markdown削除失敗 ({os.path.basename(md_file)}): {e}")
+        
+        # 最後に削除したファイルの情報を設定（複数ある場合は最後のもの）
+        if markdown_deleted_files:
+            markdown_deleted = True
+            markdown_name = markdown_deleted_files[-1]
+            markdown_abs_path = os.path.join(md_dir, markdown_name)
+            markdown_rel_path = make_rel_from_root(markdown_abs_path, EXPLORER_ROOT)
+        else:
+            # 削除対象がない場合はベース情報を設定
+            markdown_abs_path = base_md_abs_path
+            markdown_rel_path = base_md_rel_path
+            markdown_name = base_md_name
+            markdown_deleted = False
     except Exception as e:
         fail(f"Markdown削除準備失敗: {e}")
-
-    dataset_name = build_ondemand_dataset_name(folder_rel)
-    dataset = None
-
-    if require_dify_health:
-        delete_available, delete_reason = get_dify_delete_availability(force=True)
-        if not delete_available:
-            fail(delete_reason or "Difyに通信できないため削除できません。")
-
-    if dataset_name and DATASET_API_BASE and DATASET_API_KEY:
-        try:
-            dataset = find_dataset_by_name(dataset_name)
-        except Exception as e:
-            fail(f"ナレッジ取得失敗: {e}")
-
-    deleted_document_ids: List[str] = []
-    if dataset and markdown_name:
-        docs: List[Dict[str, Any]] = []
-        try:
-            docs = find_dataset_documents_by_name(str(dataset.get("id") or ""), markdown_name)
-        except Exception as e:
-            fail(f"ナレッジ文書取得失敗: {e}")
-        for doc in docs:
-            doc_id = str(doc.get("id") or "")
-            if not doc_id:
-                continue
-            try:
-                dify_delete_document(str(dataset.get("id") or ""), doc_id)
-                deleted_document_ids.append(doc_id)
-            except Exception as e:
-                fail(f"ナレッジ削除失敗: {e}")
-        if docs:
-            invalidate_dataset_document_cache(str(dataset.get("id") or ""))
-            if len(deleted_document_ids) == len(docs):
-                forget_dataset_document_name(str(dataset.get("id") or ""), markdown_name)
-
-    markdown_deleted = False
-    try:
-        if markdown_abs_path and os.path.exists(markdown_abs_path):
-            os.remove(markdown_abs_path)
-            markdown_deleted = True
-    except Exception as e:
-        fail(f"Markdown削除失敗: {e}")
+        markdown_deleted = False
 
     source_deleted = False
     try:
@@ -1880,53 +1824,22 @@ def delete_ondemand_artifacts(
         "markdown_rel_path": markdown_rel_path,
         "markdown_name": markdown_name,
         "markdown_deleted": bool(markdown_deleted),
-        "dataset_name": dataset_name,
-        "dataset_found": bool(dataset),
-        "dataset_id": str((dataset or {}).get("id") or ""),
-        "dify_deleted_count": len(deleted_document_ids),
-        "dify_deleted_ids": deleted_document_ids,
+        "markdown_deleted_files": markdown_deleted_files,
         "errors": errors,
     }
 
 
-def cleanup_markdown_and_dify(
-    markdown_abs_path: str,
-    dataset_id: str,
-    markdown_name: str,
-) -> Dict[str, Any]:
+def cleanup_markdown_only(markdown_abs_path: str) -> Dict[str, Any]:
     errors: List[str] = []
     markdown_deleted = False
-    dify_deleted_count = 0
-
     if markdown_abs_path and os.path.exists(markdown_abs_path):
         try:
             os.remove(markdown_abs_path)
             markdown_deleted = True
         except Exception as e:
             errors.append(f"Markdown削除失敗: {safe_err(str(e))}")
-
-    if dataset_id and markdown_name and DATASET_API_BASE and DATASET_API_KEY:
-        try:
-            docs = find_dataset_documents_by_name(dataset_id, markdown_name)
-            for doc in docs:
-                doc_id = str(doc.get("id") or "")
-                if not doc_id:
-                    continue
-                try:
-                    dify_delete_document(dataset_id, doc_id)
-                    dify_deleted_count += 1
-                except Exception as e:
-                    errors.append(f"Dify削除失敗: {safe_err(str(e))}")
-            if docs:
-                invalidate_dataset_document_cache(dataset_id)
-                if dify_deleted_count == len(docs):
-                    forget_dataset_document_name(dataset_id, markdown_name)
-        except Exception as e:
-            errors.append(f"Difyナレッジ取得失敗: {safe_err(str(e))}")
-
     return {
         "markdown_deleted": markdown_deleted,
-        "dify_deleted_count": dify_deleted_count,
         "errors": errors,
     }
 

@@ -42,8 +42,6 @@ class OnDemandQueueManager:
     ) -> Dict[str, Any]:
         folder_rel = (folder_rel_path or "").strip().replace("\\", "/").strip("/")
         source_signature = (source_signature or build_source_signature(source_abs_path, source_rel_path)).strip()
-        dataset_name = build_ondemand_dataset_name(folder_rel)
-        dataset = dict(dataset_hint) if isinstance(dataset_hint, dict) and dataset_hint else None
         message = ""
         source_name_for_ext = source_original_name or source_saved_name
         source_ext = os.path.splitext(source_name_for_ext or "")[1].lower()
@@ -51,19 +49,7 @@ class OnDemandQueueManager:
         if not is_allowed_extension(source_ext):
             message = f"非対応拡張子です: {source_ext or '(拡張子なし)'}"
         elif not API_BASE or not API_KEY:
-            message = "生成AI API設定が未完了です。"
-        elif not DATASET_API_BASE or not DATASET_API_KEY:
-            message = "ナレッジAPI設定が未完了です。"
-        elif not dataset_name:
-            message = "ナレッジ名を判定できません。"
-        elif not dataset:
-            try:
-                dataset = find_dataset_by_name(dataset_name)
-            except Exception as e:
-                dataset = None
-                message = safe_err(str(e)) or "ナレッジ一覧の取得に失敗しました。"
-            if not dataset and not message:
-                message = "ナレッジが存在しません。管理者に問い合わせてください"
+            message = "Markdown変換API設定が未完了です（DIFY_API_BASE / DIFY_API_KEY）。"
 
         md_abs_path = ""
         md_rel_path = ""
@@ -74,7 +60,7 @@ class OnDemandQueueManager:
             if not message:
                 message = safe_err(str(e))
 
-        doc_key = build_ondemand_doc_key((dataset or {}).get("id") or "", dataset_name, md_name)
+        doc_key = build_ondemand_doc_key("", folder_rel, md_name)
 
         with self._cv:
             handled = self._handled_source_signatures.get(source_signature) if source_signature else None
@@ -85,10 +71,9 @@ class OnDemandQueueManager:
             if existing:
                 existing_status = str(existing.get("status") or "")
                 existing_terminal = bool(existing.get("terminal"))
-                if existing_terminal and existing_status == "error" and dataset and md_abs_path:
+                if existing_terminal and existing_status == "error" and md_abs_path:
                     revived = self._revive_failed_task_locked(
                         existing,
-                        dataset=dataset,
                         md_abs_path=md_abs_path,
                         md_rel_path=md_rel_path,
                         md_name=md_name,
@@ -113,6 +98,7 @@ class OnDemandQueueManager:
 
             task_id = uuid.uuid4().hex
             now = now_label()
+            acceptable = bool(md_abs_path) and not message
             task = {
                 "id": task_id,
                 "folder_rel_path": folder_rel,
@@ -124,15 +110,15 @@ class OnDemandQueueManager:
                 "source_original_name": source_original_name,
                 "source_display_name": source_original_name or source_saved_name,
                 "source_signature": source_signature,
-                "dataset_name": dataset_name,
-                "dataset_id": (dataset or {}).get("id") or "",
+                "dataset_name": "",
+                "dataset_id": "",
                 "markdown_abs_path": md_abs_path,
                 "markdown_rel_path": md_rel_path,
                 "markdown_name": md_name,
                 "doc_key": doc_key,
-                "status": "queued" if dataset and md_abs_path else "error",
-                "stage": "順番待ち" if dataset and md_abs_path else "受付不可",
-                "message": (queue_message or "アップロード待ちキューに追加しました。") if dataset and md_abs_path else message,
+                "status": "queued" if acceptable else "error",
+                "stage": "順番待ち" if acceptable else "受付不可",
+                "message": (queue_message or "アップロード待ちキューに追加しました。") if acceptable else message,
                 "attempt_no": 0,
                 "retry_count": 0,
                 "max_retry_count": ONDEMAND_QUEUE_MAX_RETRIES,
@@ -140,7 +126,7 @@ class OnDemandQueueManager:
                 "updated_at": now,
                 "started_at": "",
                 "finished_at": "",
-                "terminal": not bool(dataset and md_abs_path),
+                "terminal": not acceptable,
                 "doc_id": "",
                 "batch": "",
                 "indexing_status": "",
@@ -149,7 +135,7 @@ class OnDemandQueueManager:
                 "last_error": message if message else "",
                 "markdown_written": False,
                 "queue_order": None,
-                "result": "pending" if dataset and md_abs_path else "error",
+                "result": "pending" if acceptable else "error",
             }
 
             self._tasks[task_id] = task
@@ -603,7 +589,6 @@ class OnDemandQueueManager:
     def _revive_failed_task_locked(
         self,
         task: Dict[str, Any],
-        dataset: Optional[Dict[str, Any]],
         md_abs_path: str,
         md_rel_path: str,
         md_name: str,
@@ -616,7 +601,7 @@ class OnDemandQueueManager:
             self._active_doc_keys.pop(old_doc_key, None)
 
         now = now_label()
-        task["dataset_id"] = (dataset or {}).get("id") or ""
+        task["dataset_id"] = ""
         task["markdown_abs_path"] = md_abs_path
         task["markdown_rel_path"] = md_rel_path
         task["markdown_name"] = md_name
@@ -823,23 +808,29 @@ class OnDemandQueueManager:
         append_ondemand_queue_log("task_start", task_snapshot)
 
         try:
-            dataset_id = str(task.get("dataset_id") or "")
             source_abs_path = str(task.get("source_abs_path") or "")
             source_display_name = str(task.get("source_display_name") or "")
-            markdown_name = str(task.get("markdown_name") or "")
             markdown_abs_path = str(task.get("markdown_abs_path") or "")
             folder_rel_path = str(task.get("folder_rel_path") or "")
 
-            self._update_task(task_id, stage="差分確認", message="同一Markdownがナレッジに存在するか確認しています。")
-            if dataset_document_exists_by_name(dataset_id, markdown_name):
-                self._finish_task(
-                    task_id,
-                    status="skipped",
-                    stage="差分なし",
-                    message="同一Markdownが既にナレッジに存在するため登録をスキップしました。",
-                    result="skipped",
-                )
-                return
+            self._update_task(task_id, stage="差分確認", message="同名Markdownが保存先に存在するか確認しています。")
+            # タイムスタンププレフィックス付きファイル名に対応した差分チェック
+            if markdown_abs_path:
+                md_dir = os.path.dirname(markdown_abs_path)
+                md_base_name = os.path.basename(markdown_abs_path)
+                # yyyymmddhhmmss_元ファイル名.md のパターンで既存ファイルを検索
+                import glob
+                pattern = os.path.join(md_dir, f"*_{md_base_name}")
+                existing_files = glob.glob(pattern)
+                if existing_files:
+                    self._finish_task(
+                        task_id,
+                        status="skipped",
+                        stage="差分なし",
+                        message="同名Markdownが既に存在するため変換をスキップしました。",
+                        result="skipped",
+                    )
+                    return
 
             self._update_task(task_id, stage="テキスト抽出", message=f"{source_display_name} からテキストを抽出しています。")
             raw_text, meta = extract_text(source_abs_path, knowledge_style=ONDEMAND_QUEUE_STYLE)
@@ -868,62 +859,32 @@ class OnDemandQueueManager:
             )
 
             self._update_task(task_id, stage="Markdown保存", message="Markdownファイルを保存しています。")
-            os.makedirs(os.path.dirname(markdown_abs_path), exist_ok=True)
-            with open(markdown_abs_path, "w", encoding="utf-8", newline="\n") as f:
+            # 変換時刻をファイル名に追加: yyyymmddhhmmss_元ファイル名.md
+            md_dir = os.path.dirname(markdown_abs_path)
+            md_base_name = os.path.basename(markdown_abs_path)
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            md_final_name = f"{timestamp}_{md_base_name}"
+            md_final_path = os.path.join(md_dir, md_final_name)
+            md_final_rel_path = make_rel_from_root(md_final_path, EXPLORER_ROOT)
+            
+            os.makedirs(md_dir, exist_ok=True)
+            with open(md_final_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(md_save)
-            self._update_task(task_id, markdown_written=True)
-
-            self._update_task(task_id, stage="ナレッジ登録", message="Difyナレッジへ登録しています。")
-            reg = register_markdown_to_dify(
-                dataset_id=dataset_id,
-                doc_name=markdown_name,
-                markdown=md_body,
-                chunk_sep=ONDEMAND_QUEUE_CHUNK_SEP,
-            )
+            
+            # タスク情報を最終的なファイルパスで更新
             self._update_task(
                 task_id,
-                doc_id=reg.get("doc_id") or "",
-                batch=reg.get("batch") or "",
-                message=(
-                    f"受付済み: chunks={reg.get('chunks')} / max_tokens={reg.get('dify_max_tokens')} / search=hybrid_search"
-                ),
+                markdown_written=True,
+                markdown_abs_path=md_final_path,
+                markdown_rel_path=md_final_rel_path,
+                markdown_name=md_final_name
             )
 
-            final = None
-            for prog in iter_indexing_status(dataset_id=dataset_id, batch=reg["batch"], doc_id=reg["doc_id"]):
-                completed = int(prog.get("completed_segments") or 0)
-                total = int(prog.get("total_segments") or 0)
-                status = str(prog.get("indexing_status") or "")
-                msg = f"埋め込み中: status={status} / segments={completed}/{total}"
-                if prog.get("error"):
-                    msg += f" / error={safe_err(str(prog.get('error')))}"
-                self._update_task(
-                    task_id,
-                    stage="埋め込み待ち",
-                    indexing_status=status,
-                    completed_segments=completed,
-                    total_segments=total,
-                    message=msg,
-                )
-                if prog.get("terminal"):
-                    final = prog
-                    break
-
-            if not final:
-                raise RuntimeError("Dify埋め込みの進捗取得に失敗しました。")
-            if str(final.get("indexing_status") or "").lower() != "completed":
-                raise RuntimeError(
-                    f"Dify埋め込み失敗: status={final.get('indexing_status')} error={final.get('error')}"
-                )
-            if int(final.get("total_segments") or 0) <= 0:
-                raise RuntimeError("Dify側で0セグメントのまま完了しました。")
-
-            remember_dataset_document_name(dataset_id, markdown_name)
             self._finish_task(
                 task_id,
                 status="completed",
                 stage="完了",
-                message="Markdown保存とナレッジ登録が完了しました。",
+                message="Markdown保存が完了しました。",
                 result="completed",
             )
         except Exception as e:
@@ -1002,23 +963,18 @@ class OnDemandQueueManager:
             if task_id == self._running_task_id:
                 return {"ok": False, "error": "処理中のため操作できません。"}
 
-            dataset_id = dataset_id_override or str(task.get("dataset_id") or "")
-            dataset_name = str(task.get("dataset_name") or "")
             md_abs_path = str(task.get("markdown_abs_path") or "")
             md_rel_path = str(task.get("markdown_rel_path") or "")
             md_name = str(task.get("markdown_name") or "")
+            folder_rel = str(task.get("folder_rel_path") or "")
 
-            if not dataset_id:
-                return {"ok": False, "error": "ナレッジIDが不明なため再試行できません。"}
             if not md_abs_path:
                 return {"ok": False, "error": "Markdownパスが不明なため再試行できません。"}
 
-            dataset = {"id": dataset_id}
-            doc_key = build_ondemand_doc_key(dataset_id, dataset_name, md_name)
+            doc_key = build_ondemand_doc_key("", folder_rel, md_name)
 
             revived = self._revive_failed_task_locked(
                 task,
-                dataset=dataset,
                 md_abs_path=md_abs_path,
                 md_rel_path=md_rel_path,
                 md_name=md_name,
@@ -1109,11 +1065,9 @@ class OnDemandFolderMonitor:
             time.sleep(ONDEMAND_MONITOR_INTERVAL_SEC)
 
     def _scan_once(self, stats: Dict[str, int]) -> None:
-        if not API_BASE or not API_KEY or not DATASET_API_BASE or not DATASET_API_KEY:
+        if not API_BASE or not API_KEY:
+            # Markdown変換API未設定の場合はスキップ
             return
-
-        datasets = get_datasets_cached(force=False)
-        dataset_map = {normalize_name_key((it or {}).get("name")): dict(it) for it in (datasets or []) if (it or {}).get("name")}
 
         for folder_abs_path, folder_rel_path in iter_ondemand_watch_folders(EXPLORER_ROOT):
             stats["folders"] += 1
@@ -1121,9 +1075,6 @@ class OnDemandFolderMonitor:
             if not is_ondemand_source_folder_rel(folder_rel_path):
                 stats["not_target"] += 1
                 continue
-
-            dataset_name = build_ondemand_dataset_name(folder_rel_path)
-            dataset = dataset_map.get(normalize_name_key(dataset_name)) if dataset_name else None
 
             files = list_ondemand_source_files(folder_abs_path, EXPLORER_ROOT)
             for info in files:
@@ -1133,22 +1084,29 @@ class OnDemandFolderMonitor:
                     stats["known"] += 1
                     continue
 
-                if not dataset:
-                    stats["dataset_missing"] += 1
-                    continue
-
-                md_name = ""
+                md_abs_path = ""
                 try:
-                    _, _, md_name = build_ondemand_markdown_path(folder_rel_path, str(info.get("source_original_name") or ""))
+                    # タイムスタンププレフィックス付きファイル名に対応した存在チェック
+                    base_md_abs_path, _, base_md_name = build_ondemand_markdown_path(folder_rel_path, str(info.get("source_original_name") or ""))
+                    md_dir = os.path.dirname(base_md_abs_path)
+                    pattern = f"*_{base_md_name}"
+                    
+                    import glob
+                    existing_files = glob.glob(os.path.join(md_dir, pattern))
+                    
+                    if existing_files:
+                        md_abs_path = existing_files[0]  # 存在するかどうかだけが重要
+                    else:
+                        md_abs_path = base_md_abs_path
                 except Exception:
                     continue
 
-                if dataset_document_exists_by_name(str(dataset.get("id") or ""), md_name):
+                if md_abs_path and os.path.exists(md_abs_path):
                     self._queue.remember_handled_source_signature(
                         source_signature=source_signature,
                         status="skipped",
                         stage="差分なし",
-                        message="同一Markdownが既にナレッジに存在するため監視対象から除外しました。",
+                        message="同名Markdownが既に保存先に存在するため監視対象から除外しました。",
                         result="skipped",
                     )
                     stats["doc_exists"] += 1
@@ -1162,7 +1120,6 @@ class OnDemandFolderMonitor:
                     source_saved_name=str(info.get("source_saved_name") or ""),
                     source_original_name=str(info.get("source_original_name") or ""),
                     source_signature=source_signature,
-                    dataset_hint=dataset,
                     queue_message="フォルダ監視で検出し、順番待ちキューへ追加しました。",
                 )
                 if task and str(task.get("status") or "") == "queued":

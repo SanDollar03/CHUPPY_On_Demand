@@ -31,7 +31,7 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.35;
     font-family: "Noto Sans JP", system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
 }
@@ -51,7 +51,7 @@ button {
     background: #fff;
     color: var(--text);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     line-height: .95;
 }
 
@@ -94,7 +94,7 @@ button:disabled {
 }
 
 .topbar-title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     letter-spacing: .02em;
     line-height: 1.15;
@@ -142,7 +142,7 @@ button:disabled {
     flex-direction: column;
     gap: 0;
     padding: 0;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.02;
 }
 
@@ -182,7 +182,7 @@ button:disabled {
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     line-height: 1;
 }
@@ -232,7 +232,7 @@ button:disabled {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13.5px;
+    font-size: 14.5px;
     font-weight: 400;
     line-height: 1.02;
 }
@@ -240,7 +240,7 @@ button:disabled {
 .folderTreeCount {
     flex: 0 0 auto;
     color: var(--bad);
-    font-size: 11.5px;
+    font-size: 12.5px;
     font-weight: 500;
     line-height: 1;
 }
@@ -248,7 +248,7 @@ button:disabled {
 .folderTreeLv {
     flex: 0 0 auto;
     color: var(--muted);
-    font-size: 9.5px;
+    font-size: 10.5px;
     font-weight: 400;
     line-height: 1;
 }
@@ -280,18 +280,18 @@ button:disabled {
 
 .ondemandInfoLabel {
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.15;
 }
 
 .ondemandInfoValue {
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.2;
 }
 
 .ondemandCurrentPath {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     word-break: break-all;
 }
@@ -309,7 +309,7 @@ button:disabled {
     border: 1px solid var(--line);
     border-radius: 6px;
     background: var(--surface);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     line-height: 1.2;
     word-break: break-word;
@@ -335,7 +335,7 @@ button:disabled {
     height: 27px;
     padding: 0 10px;
     border-radius: 7px;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .ondemandDropZone {
@@ -366,7 +366,7 @@ button:disabled {
 }
 
 .ondemandDropTitle {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.15;
 }
@@ -375,7 +375,7 @@ button:disabled {
 .ondemandDropExts {
     margin: 2px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.15;
     word-break: break-word;
 }
@@ -392,7 +392,7 @@ button:disabled {
     height: 27px;
     padding: 0 10px;
     border-radius: 7px;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .ondemandPanelSection {
@@ -737,7 +737,7 @@ button:disabled {
 
 @media (max-width: 640px) {
     .topbar-title {
-        font-size: 15px;
+        font-size: 16px;
     }
 
     .ondemandTopBar {

@@ -55,7 +55,7 @@ class OnDemandQueueManager:
         md_rel_path = ""
         md_name = ""
         try:
-            md_abs_path, md_rel_path, md_name = build_ondemand_markdown_path(folder_rel, source_original_name)
+            md_abs_path, md_rel_path, md_name = build_ondemand_markdown_path(folder_rel, source_saved_name)
         except Exception as e:
             if not message:
                 message = safe_err(str(e))
@@ -814,23 +814,16 @@ class OnDemandQueueManager:
             folder_rel_path = str(task.get("folder_rel_path") or "")
 
             self._update_task(task_id, stage="差分確認", message="同名Markdownが保存先に存在するか確認しています。")
-            # タイムスタンププレフィックス付きファイル名に対応した差分チェック
-            if markdown_abs_path:
-                md_dir = os.path.dirname(markdown_abs_path)
-                md_base_name = os.path.basename(markdown_abs_path)
-                # yyyymmddhhmmss_元ファイル名.md のパターンで既存ファイルを検索
-                import glob
-                pattern = os.path.join(md_dir, f"*_{md_base_name}")
-                existing_files = glob.glob(pattern)
-                if existing_files:
-                    self._finish_task(
-                        task_id,
-                        status="skipped",
-                        stage="差分なし",
-                        message="同名Markdownが既に存在するため変換をスキップしました。",
-                        result="skipped",
-                    )
-                    return
+            # 保存先にMarkdownが既に存在する場合は差分なしとしてスキップ
+            if markdown_abs_path and os.path.isfile(markdown_abs_path):
+                self._finish_task(
+                    task_id,
+                    status="skipped",
+                    stage="差分なし",
+                    message="同名Markdownが既に存在するため変換をスキップしました。",
+                    result="skipped",
+                )
+                return
 
             self._update_task(task_id, stage="テキスト抽出", message=f"{source_display_name} からテキストを抽出しています。")
             raw_text, meta = extract_text(source_abs_path, knowledge_style=ONDEMAND_QUEUE_STYLE)
@@ -859,26 +852,12 @@ class OnDemandQueueManager:
             )
 
             self._update_task(task_id, stage="Markdown保存", message="Markdownファイルを保存しています。")
-            # 変換時刻をファイル名に追加: yyyymmddhhmmss_元ファイル名.md
             md_dir = os.path.dirname(markdown_abs_path)
-            md_base_name = os.path.basename(markdown_abs_path)
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            md_final_name = f"{timestamp}_{md_base_name}"
-            md_final_path = os.path.join(md_dir, md_final_name)
-            md_final_rel_path = make_rel_from_root(md_final_path, EXPLORER_ROOT)
-            
             os.makedirs(md_dir, exist_ok=True)
-            with open(md_final_path, "w", encoding="utf-8", newline="\n") as f:
+            with open(markdown_abs_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(md_save)
-            
-            # タスク情報を最終的なファイルパスで更新
-            self._update_task(
-                task_id,
-                markdown_written=True,
-                markdown_abs_path=md_final_path,
-                markdown_rel_path=md_final_rel_path,
-                markdown_name=md_final_name
-            )
+
+            self._update_task(task_id, markdown_written=True)
 
             self._finish_task(
                 task_id,
@@ -1086,18 +1065,8 @@ class OnDemandFolderMonitor:
 
                 md_abs_path = ""
                 try:
-                    # タイムスタンププレフィックス付きファイル名に対応した存在チェック
-                    base_md_abs_path, _, base_md_name = build_ondemand_markdown_path(folder_rel_path, str(info.get("source_original_name") or ""))
-                    md_dir = os.path.dirname(base_md_abs_path)
-                    pattern = f"*_{base_md_name}"
-                    
-                    import glob
-                    existing_files = glob.glob(os.path.join(md_dir, pattern))
-                    
-                    if existing_files:
-                        md_abs_path = existing_files[0]  # 存在するかどうかだけが重要
-                    else:
-                        md_abs_path = base_md_abs_path
+                    base_md_abs_path, _, _ = build_ondemand_markdown_path(folder_rel_path, str(info.get("source_saved_name") or ""))
+                    md_abs_path = base_md_abs_path
                 except Exception:
                     continue
 

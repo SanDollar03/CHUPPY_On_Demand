@@ -847,7 +847,6 @@ def resolve_explorer_file_registration_status(
     latest_task: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     file_name = str((file_item or {}).get("name") or "")
-    original_name = strip_upload_timestamp_prefix(file_name) or sanitize_upload_filename(file_name)
     queue_status = str((latest_task or {}).get("status") or "")
     queue_stage = str((latest_task or {}).get("stage") or "")
     queue_order = (latest_task or {}).get("queue_order")
@@ -870,19 +869,8 @@ def resolve_explorer_file_registration_status(
 
     markdown_abs_path = ""
     try:
-        # タイムスタンププレフィックス付きファイル名に対応した存在チェック
-        base_md_abs_path, _, base_md_name = build_ondemand_markdown_path(folder_rel_path, original_name)
-        md_dir = os.path.dirname(base_md_abs_path)
-        pattern = f"*_{base_md_name}"
-        
-        import glob
-        existing_files = glob.glob(os.path.join(md_dir, pattern))
-        
-        if existing_files:
-            # 最新のファイルを選択（タイムスタンプ順）
-            markdown_abs_path = sorted(existing_files)[-1]
-        else:
-            markdown_abs_path = base_md_abs_path
+        base_md_abs_path, _, _ = build_ondemand_markdown_path(folder_rel_path, file_name)
+        markdown_abs_path = base_md_abs_path
     except Exception:
         markdown_abs_path = ""
 
@@ -1695,7 +1683,7 @@ def build_ondemand_dataset_name(rel_path: str) -> str:
     return DATASET_NAME_PREFIX + "_".join(filtered)
 
 
-def build_ondemand_markdown_path(folder_rel_path: str, original_name: str) -> Tuple[str, str, str]:
+def build_ondemand_markdown_path(folder_rel_path: str, source_saved_name: str) -> Tuple[str, str, str]:
     rel = (folder_rel_path or "").strip().replace("\\", "/").strip("/")
     parts = [p for p in rel.split("/") if p]
     if len(parts) != UPLOAD_ALLOWED_DEPTH:
@@ -1708,7 +1696,7 @@ def build_ondemand_markdown_path(folder_rel_path: str, original_name: str) -> Tu
     md_dir_rel = "/".join(md_parts)
     md_dir_abs = resolve_explorer_path(EXPLORER_ROOT, md_dir_rel)
 
-    base_name = os.path.splitext(sanitize_upload_filename(original_name))[0]
+    base_name = os.path.splitext(sanitize_upload_filename(source_saved_name))[0]
     if not base_name:
         raise RuntimeError("Markdownファイル名を決定できません。")
 
@@ -1773,38 +1761,18 @@ def delete_ondemand_artifacts(
     markdown_rel_path = ""
     markdown_name = ""
     markdown_deleted_files = []
+    markdown_deleted = False
     try:
-        # タイムスタンププレフィックス付きファイル名に対応: *_元ファイル名.md パターンで検索
-        base_md_abs_path, base_md_rel_path, base_md_name = build_ondemand_markdown_path(folder_rel, original_name)
-        md_dir = os.path.dirname(base_md_abs_path)
-        pattern = f"*_{base_md_name}"
-        
-        import glob
-        existing_files = glob.glob(os.path.join(md_dir, pattern))
-        
-        for md_file in existing_files:
+        markdown_abs_path, markdown_rel_path, markdown_name = build_ondemand_markdown_path(folder_rel, saved_name)
+        if os.path.isfile(markdown_abs_path):
             try:
-                if os.path.exists(md_file):
-                    os.remove(md_file)
-                    markdown_deleted_files.append(os.path.basename(md_file))
+                os.remove(markdown_abs_path)
+                markdown_deleted = True
+                markdown_deleted_files.append(markdown_name)
             except Exception as e:
-                fail(f"Markdown削除失敗 ({os.path.basename(md_file)}): {e}")
-        
-        # 最後に削除したファイルの情報を設定（複数ある場合は最後のもの）
-        if markdown_deleted_files:
-            markdown_deleted = True
-            markdown_name = markdown_deleted_files[-1]
-            markdown_abs_path = os.path.join(md_dir, markdown_name)
-            markdown_rel_path = make_rel_from_root(markdown_abs_path, EXPLORER_ROOT)
-        else:
-            # 削除対象がない場合はベース情報を設定
-            markdown_abs_path = base_md_abs_path
-            markdown_rel_path = base_md_rel_path
-            markdown_name = base_md_name
-            markdown_deleted = False
+                fail(f"Markdown削除失敗 ({markdown_name}): {e}")
     except Exception as e:
         fail(f"Markdown削除準備失敗: {e}")
-        markdown_deleted = False
 
     source_deleted = False
     try:
